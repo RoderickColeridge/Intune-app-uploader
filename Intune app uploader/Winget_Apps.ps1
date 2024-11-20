@@ -44,8 +44,8 @@ Add-Type -AssemblyName System.Drawing
 # Auto-update script
 
 # Define the URL of your script repository
-$repoUrl = "https://wingetscript.blob.core.windows.net/mainscript/Winget_Apps.ps1"
-$versionFileUrl = "https://wingetscript.blob.core.windows.net/mainscript/version.txt"
+$repoUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/Winget_Apps.ps1"
+$versionFileUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/version.txt"
 
 # Current version of the script
 $currentVersion = "1.0.8"
