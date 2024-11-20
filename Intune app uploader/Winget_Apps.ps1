@@ -32,6 +32,10 @@
 # Added proactive remediation script per app to check for updates on a daily base
 # Date: 19-11-2024
 #########################################
+# Version 1.0.8
+# Updated Del Credentials button to remove all credentials and azure ad app
+# Date: 20-11-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -40,11 +44,11 @@ Add-Type -AssemblyName System.Drawing
 # Auto-update script
 
 # Define the URL of your script repository
-$repoUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/Winget_Apps.ps1"
-$versionFileUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/version.txt"
+$repoUrl = "https://wingetscript.blob.core.windows.net/mainscript/Winget_Apps.ps1"
+$versionFileUrl = "https://wingetscript.blob.core.windows.net/mainscript/version.txt"
 
 # Current version of the script
-$currentVersion = "1.0.7"
+$currentVersion = "1.0.8"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1632,7 +1636,40 @@ function Save-Config {
 }
 # Add event handlers
 $appRegButton.Add_Click({ Register-IntuneApp })
-$removeCredButton.Add_Click({ Remove-GraphCredentials })
+$removeCredButton.Add_Click({
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Are you sure you want to remove all stored credentials?",
+        "Confirm Removal",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question
+    )
+    
+    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        try {
+            Remove-AzureADApp
+            Remove-StoredCredentials
+            Remove-GraphCredentials
+
+            $script:config = $null
+
+            [System.Windows.Forms.MessageBox]::Show(
+                "All credentials have been removed successfully.",
+                "Cleanup Complete",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            )
+        }
+        catch {
+            Log-Message "Error during credential removal: $($_.Exception.Message)" "ERROR"
+            [System.Windows.Forms.MessageBox]::Show(
+                "Error removing credentials: $($_.Exception.Message)",
+                "Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            )
+        }
+    }
+})
 $addButton.Add_Click({ Add-App })
 $editButton.Add_Click({ Edit-App })
 $removeButton.Add_Click({ Remove-App })
