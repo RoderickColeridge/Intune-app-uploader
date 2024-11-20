@@ -44,8 +44,8 @@ Add-Type -AssemblyName System.Drawing
 # Auto-update script
 
 # Define the URL of your script repository
-$repoUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/Winget_Apps.ps1"
-$versionFileUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/version.txt"
+$repoUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/Intune%20app%20uploader/Winget_Apps.ps1"
+$versionFileUrl = "https://github.com/RoderickColeridge/Scripts/blob/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
 $currentVersion = "1.0.8"
