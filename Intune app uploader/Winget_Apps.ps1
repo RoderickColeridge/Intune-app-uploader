@@ -33,8 +33,9 @@
 # Date: 19-11-2024
 #########################################
 # Version 1.0.8
-# Updated Del Credentials button to remove all credentials and azure ad app
-# Date: 20-11-2024
+# Fixed search function
+# Fixed OOBE deployment errors
+# Date: 29-11-2024
 #########################################
 
 
@@ -340,9 +341,10 @@ function Add-App {
 
         # Create a safe file name by replacing spaces with underscores
         $safeFileName = $nameTextBox.Text -replace '\s', '_'
+        $packageId = $wingetTextBox.Text
 
         # Generate install and uninstall commands using the safe file name
-        $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1"
+        $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
         $uninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
 
         $newApp = @{
@@ -358,7 +360,7 @@ function Add-App {
             $config | Add-Member -NotePropertyName Apps -NotePropertyValue @()
         }
 
-        $config.Apps += $newApp
+        $config.Apps = @($config.Apps) + $newApp
         $config | ConvertTo-Json | Set-Content -Path $configPath
         Load-Apps
         Log-Message "Added new app: $($nameTextBox.Text)"
@@ -601,7 +603,7 @@ function Edit-App {
                 # Update install and uninstall commands if the name has changed
                 if ($appToEdit.DisplayName -ne $appName) {
                     $safeFileName = $nameTextBox.Text -replace '\s', '_'
-                    $appToEdit.InstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1"
+                    $appToEdit.InstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
                     $appToEdit.UninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
                 }
                 
@@ -925,7 +927,7 @@ if (`$ResolveWingetPath) {
         # Parameters for the proactive remediation
         $params = @{
             "@odata.type" = "#microsoft.graph.deviceHealthScript"
-            displayName = $AppName
+            displayName = "Update_$AppName"
             description = "Checks and installs updates for $AppName using Winget"
             publisher = "Winget Auto-Update"
             runAs32Bit = $false
@@ -1137,74 +1139,307 @@ function Run-MainScript {
                     # Create Winget install script
                     $wingetInstallScriptPath = Join-Path -Path $TempDir -ChildPath "$safeFileName.ps1"
                     $wingetInstallScriptContent = @"
-# Start Transcript
-`$logDirectory = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs"
-if (-not (Test-Path `$logDirectory)) {
-    New-Item -ItemType Directory -Path `$logDirectory -Force | Out-Null
-}
-`$logPath = Join-Path -Path `$logDirectory -ChildPath "${safeFileName}_Install_`$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-Start-Transcript -Path `$logPath -Append
-
 # Define the Winget Package Name
 `$PackageName = '$($app.WingetId)'
 
-`$AppInstaller = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq Microsoft.DesktopAppInstaller
-
-If(`$AppInstaller.Version -lt "2022.506.16.0") {
-    Write-Host "Winget is not installed, trying to install latest version from Github" -ForegroundColor Yellow
-
-    Try {
-        Write-Host "Creating Winget Packages Folder" -ForegroundColor Yellow
-
-        if (!(Test-Path -Path C:\ProgramData\WinGetPackages)) {
-            New-Item -Path C:\ProgramData\WinGetPackages -Force -ItemType Directory
+function Write-Log(`$message) #Log script messages to temp directory
+{
+    `$LogMessage = ((Get-Date -Format "MM-dd-yy HH:MM:ss ") + `$message)
+    `$LogPath = "`$env:programdata\Microsoft\IntuneManagementExtension\Logs"
+    
+    # Create log directory if it doesn't exist
+    if (-not (Test-Path `$LogPath)) {
+        try {
+            New-Item -Path `$LogPath -ItemType Directory -Force | Out-Null
+            Write-Host "Created log directory: `$LogPath"
         }
-
-        Set-Location C:\ProgramData\WinGetPackages
-
-        #Downloading Packagefiles
-        Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.UI.Xaml/2.7.0" -OutFile "C:\ProgramData\WinGetPackages\microsoft.ui.xaml.2.7.0.zip"
-        Expand-Archive C:\ProgramData\WinGetPackages\microsoft.ui.xaml.2.7.0.zip -Force
-        Invoke-WebRequest -Uri "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" -OutFile "C:\ProgramData\WinGetPackages\Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        Invoke-WebRequest -Uri "https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" -OutFile "C:\ProgramData\WinGetPackages\Winget.msixbundle"
-
-        Add-ProvisionedAppxPackage -online -PackagePath:.\Winget.msixbundle -DependencyPackagePath .\Microsoft.VCLibs.x64.14.00.Desktop.appx,.\microsoft.ui.xaml.2.7.0\tools\AppX\x64\Release\Microsoft.UI.Xaml.2.7.Appx -SkipLicense
-
-        Write-Host "Starting sleep for Winget to initiate" -Foregroundcolor Yellow
-        Start-Sleep 2
+        catch {
+            Write-Host "Failed to create log directory: `$(`$_.Exception.Message)"
+        }
     }
-    Catch {
-        Throw "Failed to install Winget"
-        Break
+
+    # Ensure we have a valid package name for the log file
+    `$logFileName = if ([string]::IsNullOrWhiteSpace(`$PackageName)) { 
+        "WingetInstall_$(Get-Date -Format 'yyyyMMdd_HHmmss')" 
+    } else { 
+        `$PackageName.Replace(" ", "_").Replace("/", "_")
     }
-}
-Else {
-    Write-Host "Winget already installed, moving on" -ForegroundColor Green
+
+    if (Test-Path `$LogPath) {
+        `$logFilePath = Join-Path -Path `$LogPath -ChildPath "`$logFileName.log"
+        Out-File -InputObject `$LogMessage -FilePath `$logFilePath -Append -Encoding utf8
+    }
+    Write-Host `$message
 }
 
-#Trying to install Package with Winget
-IF (`$PackageName){
+function Download-Winget {
+    `$ProgressPreference = 'SilentlyContinue'
+    `$7zipFolder = "`${env:WinDir}\Temp\7zip"
     try {
-        Write-Host "Installing `$PackageName via Winget" -ForegroundColor Green
+        Write-Log "Downloading WinGet..."
+        # Create staging folder
+        New-Item -ItemType Directory -Path "`${env:WinDir}\Temp\WinGet-Stage" -Force
+        # Download Desktop App Installer msixbundle
+        Invoke-WebRequest -UseBasicParsing -Uri https://aka.ms/getwinget -OutFile "`${env:WinDir}\Temp\WinGet-Stage\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+    }
+    catch {
+        Write-Log "Failed to download WinGet!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    try {
+        Write-Log "Downloading 7zip CLI executable..."
+        # Create temp 7zip CLI folder
+        New-Item -ItemType Directory -Path `$7zipFolder -Force
+        Invoke-WebRequest -UseBasicParsing -Uri https://www.7-zip.org/a/7zr.exe -OutFile "`$7zipFolder\7zr.exe"
+        Invoke-WebRequest -UseBasicParsing -Uri https://www.7-zip.org/a/7z2408-extra.7z -OutFile "`$7zipFolder\7zr-extra.7z"
+        Write-Log "Extracting 7zip CLI executable to `${7zipFolder}..."
+        
+        # Fixed argument formatting for 7zip extraction
+        `$arguments = @(
+            "x",
+            "``"`$7zipFolder\7zr-extra.7z``"",
+            "-o``"`$7zipFolder``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7zr.exe" -ArgumentList `$arguments -Wait -NoNewWindow
+    }
+    catch {
+        Write-Log "Failed to download 7zip CLI executable!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    try {
+        # Create Folder for DesktopAppInstaller inside %ProgramData%
+        New-Item -ItemType Directory -Path "`${env:ProgramData}\Microsoft.DesktopAppInstaller" -Force
+        Write-Log "Extracting WinGet..."
+        
+        # Fixed argument formatting for WinGet bundle extraction
+        `$bundleArguments = @(
+            "x",
+            "``"`${env:WinDir}\Temp\WinGet-Stage\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle``"",
+            "-o``"`${env:WinDir}\Temp\WinGet-Stage``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7za.exe" -ArgumentList `$bundleArguments -Wait -NoNewWindow
 
-        `$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-        if (`$ResolveWingetPath){
-               `$WingetPath = `$ResolveWingetPath[-1].Path
+        # Fixed argument formatting for AppInstaller extraction
+        `$installerArguments = @(
+            "x",
+            "``"`${env:WinDir}\Temp\WinGet-Stage\AppInstaller_x64.msix``"",
+            "-o``"`${env:ProgramData}\Microsoft.DesktopAppInstaller``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7za.exe" -ArgumentList `$installerArguments -Wait -NoNewWindow
+    }
+    catch {
+        Write-Log "Failed to extract WinGet!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    if (-Not (Test-Path "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe")) {
+        Write-Log "Failed to extract WinGet!"
+        exit 1
+    }
+    `$script:WinGet = "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe"
+}
+
+function Install-VisualC {
+    try {
+        Write-Log "Downloading Visual C++ Runtime..."
+        `$url = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+        `$webClient = New-Object System.Net.WebClient
+        `$webClient.DownloadFile(`$url, "`$env:Temp\vc_redist.x64.exe")
+        `$webClient.Dispose()
+    }
+    catch {
+        Write-Log "Failed to download Visual C++!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+
+    try {
+        Write-Log "Installing Visual C++ Runtime..."
+        `$processInfo = Start-Process -FilePath "`$env:temp\vc_redist.x64.exe" -ArgumentList "/q /norestart" -Wait -PassThru -NoNewWindow
+        `$exitCode = `$processInfo.ExitCode
+        Write-Log "Visual C++ installation completed with exit code: `$exitCode"
+        
+        # Cleanup
+        Remove-Item "`$env:Temp\vc_redist.x64.exe" -Force -ErrorAction SilentlyContinue
+        
+        return `$exitCode
+    }
+    catch {
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+}
+
+function WingetInstallPackage {
+    try {
+        Write-Log "Attempting to install `$PackageName using WinGet"
+        `$processInfo = Start-Process -FilePath `$WinGet -ArgumentList "install --id `$PackageName --source winget --silent --accept-package-agreements --accept-source-agreements" -Wait -PassThru -NoNewWindow
+        `$exitCode = `$processInfo.ExitCode
+        Write-Log "WinGet installation completed with exit code: `$exitCode"
+        return `$exitCode
+    }
+    catch {
+        Write-Log "Error during WinGet installation: `$(`$_.Exception.Message)"
+        return 1
+    }
+}
+
+function Test-AppInstalled {
+    param (
+        [string]`$AppName
+    )
+    
+    `$installed = Get-WmiObject -Class Win32_Product | Where-Object { `$_.Name -like "*`$AppName*" }
+    return `$null -ne `$installed
+}
+
+function Resolve-WinGetPath {
+    # Look for Winget install in WindowsApps folder
+    `$WinAppFolderPath = Get-ChildItem -Path "C:\Program Files\WindowsApps" -Recurse -Filter "winget.exe" | Where-Object {`$_.VersionInfo.FileVersion -ge 1.20}
+    if (`$WinAppFolderPath) {
+        `$script:WinGet = `$WinAppFolderPath | Select-Object -ExpandProperty Fullname | Sort-Object -Descending | Select-Object -First 1
+        Write-Log "WinGet.exe found at path `$WinGet"
+        return `$true
+    }
+    else {
+        # Check if WinGet copy has already been extracted to ProgramData folder
+        if (Test-Path "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe") {
+            Write-Log "WinGet.exe found in `${env:ProgramData}\Microsoft.DesktopAppInstaller"
+            `$script:WinGet = "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe"
+            return `$true
+        }
+        else {
+            Write-Log "WinGet.exe not found"
+            return `$false
+        }
+    }
+}
+
+function Test-WinGetOutput {
+    if (-Not (Test-Path `$WinGet)) {
+        Write-Log "WinGet path not found at Test-WinGetOutput function!"
+        Write-Log "WinGet variable : `$WinGet"
+        return `$false
+    }
+    try {
+        `$maxAttempts = 3
+        `$attempt = 1
+        `$success = `$false
+
+        while (-not `$success -and `$attempt -le `$maxAttempts) {
+            Write-Log "Attempt `$attempt of `$maxAttempts to test WinGet"
+            `$processInfo = Start-Process -FilePath `$WinGet -ArgumentList "--version" -Wait -PassThru -NoNewWindow
+            if (`$processInfo.ExitCode -eq 0) {
+                Write-Log "WinGet executable test successful"
+                `$success = `$true
+                return `$true
+            } elseif (`$processInfo.ExitCode -eq -1073741701) {
+                Write-Log "WinGet executable test failed with DLL error (0xC000007B). Waiting before retry..."
+                Start-Sleep -Seconds 60
+                `$attempt++
+            } else {
+                Write-Log "WinGet executable test failed with exit code: `$(`$processInfo.ExitCode)"
+                return `$false
+            }
         }
 
-        cd `$wingetpath
+        if (-not `$success) {
+            Write-Log "All WinGet test attempts failed"
+            return `$false
+        }
+    }
+    catch {
+        Write-Log "WinGet executable test failed: `$(`$_.Exception.Message)"
+        return `$false
+    }
+}
 
-        .\winget.exe install `$PackageName --silent --accept-source-agreements --accept-package-agreements
+function Ensure-WinGetReady {
+    `$maxAttempts = 5
+    `$attempt = 1
+    `$success = `$false
+
+    while (-not `$success -and `$attempt -le `$maxAttempts) {
+        Write-Log "Attempt `$attempt of `$maxAttempts to ensure WinGet is ready"
+        
+        Resolve-WinGetPath
+        if (Test-WinGetOutput) {
+            `$success = `$true
+            Write-Log "WinGet is ready"
+            return `$true
+        } else {
+            Write-Log "WinGet not ready. Waiting before retry..."
+            Start-Sleep -Seconds 60
+            `$attempt++
+        }
     }
-    Catch {
-        Throw "Failed to install package $($_)"
+
+    if (-not `$success) {
+        Write-Log "Failed to get WinGet ready after `$maxAttempts attempts"
+        return `$false
     }
 }
-Else {
-    Write-Host "Package `$PackageName not available" -ForegroundColor Yellow
+
+#region Script
+# Install Visual C++ Runtime first
+Write-Log "Installing Visual C++ Runtime prerequisites..."
+`$vcInstall = Install-VisualC
+if (`$vcInstall -ne 0 -and `$vcInstall -ne 3010) {
+    Write-Log "Failed to install Visual C++ Runtime. Exit code: `$vcInstall"
+    exit 1
 }
-# Stop Transcript
-Stop-Transcript    
+
+# Get path for Winget executable
+if (-not (Resolve-WinGetPath)) {
+    Write-Log "WinGet not found. Attempting to download and install WinGet..."
+    Download-Winget
+}
+
+if (-not (Test-Path `$WinGet)) {
+    Write-Log "Unable to find or install WinGet. Cannot proceed with installation."
+    exit 1
+}
+
+try {
+    Write-Log -message "Starting installation of `$PackageName"
+    `$Install = WingetInstallPackage
+    Write-Log "Installation completed with result: `$Install"
+    
+    if (`$Install -eq 0) {
+        Write-Log "Installation completed successfully"
+        exit 0
+    } 
+    elseif (`$Install -eq -4294967041 -or `$Install -eq -1073741701) {
+        Write-Log "Installation reported failure. Checking if app is actually installed..."
+        if (Test-AppInstalled -AppName `$PackageName) {
+            Write-Log "App appears to be installed despite reported failure. Considering installation successful."
+            exit 0
+        } else {
+            Write-Log "App does not appear to be installed. Installation failed."
+            exit `$Install
+        }
+    }
+    else {
+        Write-Log "Installation failed with exit code: `$Install"
+        exit `$Install
+    }
+}
+catch {
+    Write-Log "Critical error during installation: `$(`$_.Exception.Message)"
+    exit 1
+}
+finally {
+    # Ensure all PowerShell processes related to this script are terminated
+    `$currentPID = `$PID
+    Get-WmiObject Win32_Process | Where-Object { `$_.ProcessName -eq "powershell.exe" -and `$_.ParentProcessId -eq `$currentPID } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force }
+    Write-Log "Script execution completed. Exiting."
+}
+#endregion
 "@
                     $wingetInstallScriptContent | Out-File -FilePath $wingetInstallScriptPath -Encoding UTF8 -ErrorAction Stop
                     Log-Message "Created Winget install script for $($app.DisplayName)."
@@ -1224,7 +1459,7 @@ Start-Transcript -Path `$logPath -Append
 `$PackageName = '$($app.WingetId)'
 
 # Find Winget executable path
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
+`$ResolveWingetPath = Resolve-Path "C:\ProgramData\Microsoft.DesktopAppInstaller"
 if (`$ResolveWingetPath) {
     `$WingetPath = `$ResolveWingetPath[-1].Path
     `$wingetExe = Join-Path -Path `$WingetPath -ChildPath 'winget.exe'
@@ -1288,27 +1523,44 @@ Stop-Transcript
 
 `$PackageName = '$($app.WingetId)'
 
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-    if (`$ResolveWingetPath){
-           `$WingetPath = `$ResolveWingetPath[-1].Path
-    }
-
-`$config
-cd `$wingetpath
-
-`$InstalledApps = .\winget.exe list --id `$PackageName
-
-if (`$InstalledApps -match `$PackageName) {
-    Write-Host `$PackageName is installed
-    Exit 0
+# Try ProgramData location first
+`$ProgramDataPath = "`${env:ProgramData}\Microsoft.DesktopAppInstaller"
+if (Test-Path `$ProgramDataPath) {
+    `$WingetPath = `$ProgramDataPath
 }
+# If not found, check WindowsApps
 else {
-    Write-Host "`$PackageName is not installed"
-    Exit 1
+    `$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -ErrorAction SilentlyContinue
+    if (`$ResolveWingetPath) {
+        `$WingetPath = `$ResolveWingetPath[-1].Path
+    }
+    else {
+        Write-Output "WinGet not found"
+        exit 1
+    }
+}
+
+try {
+    `$config
+    cd `$WingetPath
+    `$listResult = .\winget.exe list --id `$PackageName --accept-source-agreements
+
+    if (`$listResult -match `$PackageName) {
+        Write-Output "`$PackageName detected"
+        exit 0
+    }
+    else {
+        Write-Output "Application not found"
+        exit 1
+    }
+}
+catch {
+    Write-Output "Error in detection script"
+    exit 1
 }
 "@
                     $detectionScriptContent | Out-File -FilePath $detectionScriptPath -Encoding UTF8 -ErrorAction Stop
-                    Log-Message "Created detection script for $($app.DisplayName)."
+                    Log-Message "Created enhanced detection script for $($app.DisplayName)."
 
                     # Get metadata and create rules
                     $intuneWinMetaData = Get-IntuneWin32AppMetaData -FilePath $intuneWinFile
@@ -1477,56 +1729,72 @@ function Search-WingetApps {
         $searchTerm = $searchTextBox.Text
         
         try {
-            # Get winget search results
-            $wingetOutput = winget search $searchTerm
+            Log-Message "Executing winget search for: $searchTerm"
+            $wingetOutput = winget search $searchTerm --accept-source-agreements 2>&1 | Out-String
+            Log-Message "Raw winget output: $wingetOutput"
             
-            # Find the header line that contains "Name", "Id", "Version", and "Source"
-            $headerLine = $wingetOutput | Where-Object { $_ -match "Name\s+Id\s+Version\s+Source" }
-            if (-not $headerLine) {
-                Log-Message "No results found or unexpected winget output format" "WARNING"
-                return
+            # Split output into lines
+            $lines = $wingetOutput -split "`r`n"
+            
+            # Skip header lines and process data lines
+            $dataLines = $lines | Where-Object { 
+                $_.Trim() -and 
+                -not $_.StartsWith("   -") -and 
+                -not $_.StartsWith("   \") -and 
+                -not $_.Contains("Name                           Id") -and 
+                -not $_.Contains("----------------------")
             }
             
-            # Get the positions of each column
-            $namePos = $headerLine.IndexOf("Name")
-            $idPos = $headerLine.IndexOf("Id")
-            $versionPos = $headerLine.IndexOf("Version")
-            $sourcePos = $headerLine.IndexOf("Source")
-            
-            # Process each line after the separator line (usually dashes)
-            $startProcessing = $false
-            foreach ($line in $wingetOutput) {
-                # Skip until we find the separator line
-                if ($line -match "^-+") {
-                    $startProcessing = $true
+            foreach ($line in $dataLines) {
+                # Pattern 1: msstore pattern
+                if ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}(Unknown)\s+msstore$') {
+                    $name = $matches[1].Trim()
+                    $id = $matches[2].Trim()
+                    $version = $matches[3]
+                    $source = "msstore"
+                }
+                # Pattern 2: Version with parentheses
+                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+ \(\d+\))\s+winget$') {
+                    $name = $matches[1].Trim()
+                    $id = $matches[2].Trim()
+                    $version = $matches[3]
+                    $source = "winget"
+                }
+                # Pattern 3: Any tag with any content
+                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)(?:\s+.*?)?\s+winget$') {
+                    $name = $matches[1].Trim()
+                    $id = $matches[2].Trim()
+                    $version = $matches[3]
+                    $source = "winget"
+                }
+                # Pattern 4: Regular winget without tags
+                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)\s+winget$') {
+                    $name = $matches[1].Trim()
+                    $id = $matches[2].Trim()
+                    $version = $matches[3]
+                    $source = "winget"
+                }
+                else {
+                    Log-Message "Failed to parse line: $line" "WARNING"
                     continue
                 }
                 
-                if ($startProcessing -and $line.Trim()) {
-                    try {
-                        # Extract each field based on position
-                        $name = $line.Substring($namePos, $idPos - $namePos).Trim()
-                        $id = $line.Substring($idPos, $versionPos - $idPos).Trim()
-                        $version = $line.Substring($versionPos, $sourcePos - $versionPos).Trim()
-                        $source = $line.Substring($sourcePos).Trim()
-                        
-                        # Create and add the item to the list view
-                        $item = New-Object System.Windows.Forms.ListViewItem($name)
-                        $item.SubItems.Add($id)
-                        $item.SubItems.Add($version)
-                        $item.SubItems.Add($source)
-                        $resultListView.Items.Add($item)
-                    }
-                    catch {
-                        # Skip malformed lines
-                        Log-Message "Skipped malformed line: $line" "WARNING"
-                        continue
-                    }
-                }
+                # Create and add the list item
+                $item = New-Object System.Windows.Forms.ListViewItem
+                $item.Text = $name
+                $item.SubItems.Add($id)
+                $item.SubItems.Add($version)
+                $item.SubItems.Add($source)
+                
+                $resultListView.Items.Add($item)
+                Log-Message "Added: Name='$name' ID='$id' Version='$version' Source='$source'"
             }
+            
+            Log-Message "Added $($resultListView.Items.Count) items to the list view"
         }
         catch {
             Log-Message "Error during winget search: $($_.Exception.Message)" "ERROR"
+            Log-Message "Stack trace: $($_.ScriptStackTrace)" "ERROR"
         }
     }
 
@@ -1593,7 +1861,7 @@ function Search-WingetApps {
 
             if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                 $safeFileName = $displayName -replace '\s', '_'
-                $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1"
+                $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$wingetId.log`""
                 $uninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
 
                 $newApp = @{
@@ -1636,40 +1904,7 @@ function Save-Config {
 }
 # Add event handlers
 $appRegButton.Add_Click({ Register-IntuneApp })
-$removeCredButton.Add_Click({
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "Are you sure you want to remove all stored credentials?",
-        "Confirm Removal",
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
-        [System.Windows.Forms.MessageBoxIcon]::Question
-    )
-    
-    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-        try {
-            Remove-AzureADApp
-            Remove-StoredCredentials
-            Remove-GraphCredentials
-
-            $script:config = $null
-
-            [System.Windows.Forms.MessageBox]::Show(
-                "All credentials have been removed successfully.",
-                "Cleanup Complete",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Information
-            )
-        }
-        catch {
-            Log-Message "Error during credential removal: $($_.Exception.Message)" "ERROR"
-            [System.Windows.Forms.MessageBox]::Show(
-                "Error removing credentials: $($_.Exception.Message)",
-                "Error",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Error
-            )
-        }
-    }
-})
+$removeCredButton.Add_Click({ Remove-GraphCredentials })
 $addButton.Add_Click({ Add-App })
 $editButton.Add_Click({ Edit-App })
 $removeButton.Add_Click({ Remove-App })
