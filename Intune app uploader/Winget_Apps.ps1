@@ -37,6 +37,10 @@
 # Fixed OOBE deployment errors
 # Date: 29-11-2024
 #########################################
+# Version 1.0.9
+# Fixed error after using remove credentials button
+# Date: 29-11-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -49,7 +53,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.0.8"
+$currentVersion = "1.0.9"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -497,6 +501,61 @@ function Remove-GraphCredentials {
     }
 }
 
+
+function Remove-AllCredentials {
+    try {
+        # Remove Azure AD App
+        Remove-AzureADApp
+        Log-Message "Azure AD App removed successfully"
+
+        # Remove stored credentials
+        Remove-StoredCredentials
+        Log-Message "Stored credentials removed successfully"
+
+        # Remove Graph credentials
+        Remove-GraphCredentials
+        Log-Message "Graph credentials removed successfully"
+
+        # Reset the configuration with correct structure
+        $existingApps = $script:config.Apps
+        $script:config = @{
+            Apps = $existingApps
+            Credentials = @{
+                TenantID = ""
+                ClientID = ""
+                ClientSecret = ""
+                AppId = ""
+            }
+        }
+        
+        # Save the updated config
+        $configPath = Join-Path -Path $scriptDirectory -ChildPath "config.json"
+        $script:config | ConvertTo-Json | Set-Content -Path $configPath
+        Log-Message "Configuration reset with empty credentials"
+
+        # Clear script-level variables
+        $script:graphToken = $null
+        $script:connected = $false
+        
+        Load-Apps  # Reload the apps in the ListView
+        
+        [System.Windows.Forms.MessageBox]::Show(
+            "All credentials have been removed successfully.",
+            "Credentials Removed",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        )
+    }
+    catch {
+        Log-Message "Error removing credentials: $($_.Exception.Message)" "ERROR"
+        [System.Windows.Forms.MessageBox]::Show(
+            "An error occurred while removing credentials: $($_.Exception.Message)",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+    }
+}
 # Function to edit a selected app
 function Edit-App {
     $selectedItems = $listView.SelectedItems
@@ -1904,7 +1963,18 @@ function Save-Config {
 }
 # Add event handlers
 $appRegButton.Add_Click({ Register-IntuneApp })
-$removeCredButton.Add_Click({ Remove-GraphCredentials })
+$removeCredButton.Add_Click({
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Are you sure you want to remove all credentials?",
+        "Confirm Removal",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    )
+    
+    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
+        Remove-AllCredentials
+    }
+})
 $addButton.Add_Click({ Add-App })
 $editButton.Add_Click({ Edit-App })
 $removeButton.Add_Click({ Remove-App })
