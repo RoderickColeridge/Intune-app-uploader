@@ -41,6 +41,10 @@
 # Fixed error after using remove credentials button
 # Date: 29-11-2024
 #########################################
+# Version 1.1
+# Fixed possibility to delete multiple apps
+# Date: 02-12-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -53,7 +57,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.0.9"
+$currentVersion = "1.1"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -371,18 +375,26 @@ function Add-App {
     }
 }
 
-# Function to remove a selected app
+# Function to remove selected apps
 function Remove-App {
     $selectedItems = $listView.SelectedItems
     if ($selectedItems.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Please select an app to remove.", "No Selection", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)
+        [System.Windows.Forms.MessageBox]::Show(
+            "Please select at least one app to remove.", 
+            "No Selection", 
+            [System.Windows.Forms.MessageBoxButtons]::OK, 
+            [System.Windows.Forms.MessageBoxIcon]::Warning)
         return
     }
 
-    $selectedApp = $selectedItems[0]
-    $appName = $selectedApp.Text
-
-    $result = [System.Windows.Forms.MessageBox]::Show("Are you sure you want to remove $appName?", "Confirm Removal", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+    $appNames = $selectedItems | ForEach-Object { $_.Text }
+    $message = "Are you sure you want to remove the following apps?`n`n" + ($appNames -join "`n")
+    
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        $message,
+        "Confirm Removal",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Question)
     
     if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
         # Try to get the script path
@@ -403,12 +415,18 @@ function Remove-App {
         
         if (Test-Path $configPath) {
             $config = Get-Content -Path $configPath | ConvertFrom-Json
-            $config.Apps = $config.Apps | Where-Object { $_.DisplayName -ne $appName }
+            
+            # Remove each selected app
+            foreach ($appName in $appNames) {
+                $config.Apps = $config.Apps | Where-Object { $_.DisplayName -ne $appName }
+                Log-Message "Removed app: $appName"
+            }
+            
             $config | ConvertTo-Json | Set-Content -Path $configPath
             Load-Apps
-            Log-Message "Removed app: $appName"
+            Log-Message "Successfully removed $(($appNames).Count) app(s)"
         } else {
-            Log-Message "Config file not found. Unable to remove app." "ERROR"
+            Log-Message "Config file not found. Unable to remove apps." "ERROR"
         }
     }
 }
