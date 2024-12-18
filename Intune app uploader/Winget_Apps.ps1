@@ -44,6 +44,10 @@
 # Version 1.1
 # Fixed possibility to delete multiple apps
 # Date: 02-12-2024
+########################################## 
+# Version 1.1.1
+# Fixed issue with Update remediation
+# Date: 17-12-2024
 #########################################
 
 
@@ -57,7 +61,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1"
+$currentVersion = "1.1.1"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -154,17 +158,24 @@ $removeButton.Size = New-Object System.Drawing.Size(75,23)
 $removeButton.Text = "Remove"
 $form.Controls.Add($removeButton)
 
-$runButton = New-Object System.Windows.Forms.Button
-$runButton.Location = New-Object System.Drawing.Point(695,220)
-$runButton.Size = New-Object System.Drawing.Size(75,23)
-$runButton.Text = "Run"
-$form.Controls.Add($runButton)
-
 $searchButton = New-Object System.Windows.Forms.Button
 $searchButton.Location = New-Object System.Drawing.Point(435,220)
 $searchButton.Size = New-Object System.Drawing.Size(100,23)
 $searchButton.Text = "Search Winget"
 $form.Controls.Add($searchButton)
+
+# Add the "Grab Icon" button with matching style
+$grabIconButton = New-Object System.Windows.Forms.Button
+$grabIconButton.Location = New-Object System.Drawing.Point(540,220)
+$grabIconButton.Size = New-Object System.Drawing.Size(75,23)
+$grabIconButton.Text = "Grab Icon"
+$form.Controls.Add($grabIconButton)
+
+$runButton = New-Object System.Windows.Forms.Button
+$runButton.Location = New-Object System.Drawing.Point(695,220)
+$runButton.Size = New-Object System.Drawing.Size(75,23)
+$runButton.Text = "Run"
+$form.Controls.Add($runButton)
 
 # Create log text area
 $logTextBox = New-Object System.Windows.Forms.TextBox
@@ -570,8 +581,7 @@ function Remove-AllCredentials {
             "An error occurred while removing credentials: $($_.Exception.Message)",
             "Error",
             [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        )
+            [System.Windows.Forms.MessageBoxIcon]::Error)
     }
 }
 # Function to edit a selected app
@@ -694,6 +704,132 @@ function Edit-App {
             Log-Message "Config file not found. Unable to edit app." "ERROR"
         }
     }
+}
+
+# Function to grab an app icon
+
+function Grab-AppIcon {
+    param (
+        [string]$WingetId,
+        [string]$DisplayName
+    )
+
+    try {
+        # Input validation and directory check
+        if ([string]::IsNullOrWhiteSpace($WingetId)) {
+            throw "WingetId cannot be empty"
+        }
+        if ([string]::IsNullOrWhiteSpace($DisplayName)) {
+            throw "DisplayName cannot be empty"
+        }
+
+        # Ensure the Icons directory exists
+        $iconsDir = Join-Path -Path $scriptDirectory -ChildPath "Icons"
+        if (-not (Test-Path $iconsDir)) {
+            New-Item -ItemType Directory -Path $iconsDir | Out-Null
+        }
+
+        # Check if icon already exists
+        $existingIcon = Join-Path -Path $iconsDir -ChildPath "$WingetId.png"
+        if (Test-Path $existingIcon) {
+            Log-Message "Icon already exists for $DisplayName at: $existingIcon"
+            return
+        } else {
+            Log-Message "No existing icon found for $DisplayName. Will attempt to acquire one..."
+        }
+
+        # Split display name into words for searching
+        $searchTerms = $DisplayName.Split(' ') | Where-Object { $_.Length -gt 2 }
+        $firstWord = $searchTerms[0]
+        Log-Message "Searching installed applications for: $firstWord"
+
+        # Check installed applications using WMI
+        $installedApps = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*$firstWord*" }
+        if ($installedApps) {
+            foreach ($app in $installedApps) {
+                Log-Message "Found installed application: $($app.Name) at $($app.InstallLocation)"
+                # Attempt to extract icon from the application's installation path
+                $installLocation = $app.InstallLocation
+                if ($installLocation -and (Test-Path $installLocation)) {
+                    $exeFiles = Get-ChildItem -Path $installLocation -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
+                    foreach ($exe in $exeFiles) {
+                        try {
+                            Log-Message "Attempting to extract icon from: $($exe.FullName)"
+                            
+                            Add-Type -AssemblyName System.Drawing
+                            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.FullName)
+                            $bitmap = $icon.ToBitmap()
+
+                            $iconPath = Join-Path -Path $iconsDir -ChildPath "$WingetId.png"
+                            $bitmap.Save($iconPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                            Log-Message "Icon saved to $iconPath"
+                            return $true
+                        }
+                        catch {
+                            Log-Message "Failed to extract icon from $($exe.FullName): $($_.Exception.Message)" "WARNING"
+                            continue
+                        }
+                    }
+                } else {
+                    Log-Message "Installation location not found or not accessible for $($app.Name)"
+                }
+            }
+        } else {
+            Log-Message "No installed applications found matching '$firstWord' in Control Panel"
+        }
+
+        if (-not $found) {
+            throw "Could not find or extract any valid icons for $DisplayName"
+        }
+    }
+    catch {
+        $errorMessage = $_.Exception.Message
+        Log-Message "Failed to grab icon for $DisplayName - $errorMessage" "ERROR"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Failed to grab icon for $DisplayName`n$errorMessage",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+}
+
+# Helper function to extract icons from a folder
+function Get-IconFromFolder {
+    param (
+        $folder,
+        $WingetId,
+        $iconsDir
+    )
+
+    Log-Message "Searching recursively in $($folder.FullName)"
+    $exeFiles = Get-ChildItem -Path $folder.FullName -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+    
+    if ($exeFiles) {
+        $iconCount = 0
+        foreach ($exe in $exeFiles | Select-Object -First 5) {
+            try {
+                Log-Message "Attempting to extract icon from: $($exe.FullName)"
+                
+                Add-Type -AssemblyName System.Drawing
+                $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.FullName)
+                $bitmap = $icon.ToBitmap()
+
+                $suffix = if ($iconCount -eq 0) { "" } else { "_$iconCount" }
+                $iconPath = Join-Path -Path $iconsDir -ChildPath "$($WingetId)$suffix.png"
+                $bitmap.Save($iconPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                Log-Message "Icon saved to $iconPath"
+                $iconCount++
+                
+                if ($iconCount -ge 2) { return $true }
+            }
+            catch {
+                Log-Message "Failed to extract icon from $($exe.FullName): $($_.Exception.Message)" "WARNING"
+                continue
+            }
+        }
+        return ($iconCount -gt 0)
+    }
+    return $false
 }
 
 # Define the Log-Message function
@@ -961,7 +1097,7 @@ if (`$ResolveWingetPath) {
         Set-Location -Path `$WingetPath
         `$upgradeResult = & `$wingetExe upgrade --id `$PackageName --accept-source-agreements --accept-package-agreements
         
-        if (`$upgradeResult -match "No applicable update found") {
+        if (`$upgradeResult -contains "No available upgrade found.") {
             Write-Output "No updates available for `$PackageName"
             Exit 0
         } else {
@@ -969,11 +1105,11 @@ if (`$ResolveWingetPath) {
             Exit 1
         }
     } else {
-        Write-Warning "Winget executable not found"
+        Write-Output "Winget executable not found"
         Exit 1
     }
 } else {
-    Write-Warning "Could not find Winget installation path"
+    Write-Output "Could not find Winget installation path"
     Exit 1
 }
 "@
@@ -990,13 +1126,14 @@ if (`$ResolveWingetPath) {
     if (Test-Path `$wingetExe) {
         Set-Location -Path `$WingetPath
         & `$wingetExe upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
-        Exit `$LASTEXITCODE
+        Write-Output "Upgrade complete on `$PackageName"
+        Exit 0
     } else {
-        Write-Warning "Winget executable not found"
+        Write-Output "Winget executable not found"
         Exit 1
     }
 } else {
-    Write-Warning "Could not find Winget installation path"
+    Write-Output "Could not find Winget installation path"
     Exit 1
 }
 "@
@@ -1644,19 +1781,47 @@ catch {
                     $requirementRule = New-IntuneWin32AppRequirementRule -Architecture "All" -MinimumSupportedWindowsRelease "W10_1607"
                     $detectionRule = New-IntuneWin32AppDetectionRuleScript -ScriptFile $detectionScriptPath -EnforceSignatureCheck $false -RunAs32Bit $false
 
-                    # Single upload block based on assignment choice
+                    # Check for icon
+                    $iconsDir = Join-Path -Path $scriptDirectory -ChildPath "Icons"
+                    $iconPath = Join-Path -Path $iconsDir -ChildPath "$($app.WingetId).png"
+
+                    # Create the base parameters for Add-IntuneWin32App
+                    $intuneAppParams = @{
+                        FilePath = $intuneWinFile
+                        DisplayName = $app.DisplayName
+                        Description = $app.Description
+                        Publisher = $app.Publisher
+                        InstallExperience = "system"
+                        RestartBehavior = "suppress"
+                        DetectionRule = $detectionRule
+                        RequirementRule = $requirementRule
+                        InstallCommandLine = $app.InstallCommand
+                        UninstallCommandLine = $app.UninstallCommand
+                        CompanyPortalFeaturedApp = $true
+                        Verbose = $true
+                        ErrorAction = "Stop"
+                    }
+
+                    # Add icon if it exists
+                    if (Test-Path $iconPath) {
+                        Log-Message "Found icon file for $($app.DisplayName) at: $iconPath"
+                        try {
+                            # Convert icon to Base64
+                            $iconBytes = [System.IO.File]::ReadAllBytes($iconPath)
+                            $iconBase64 = [System.Convert]::ToBase64String($iconBytes)
+                            $intuneAppParams.Icon = $iconBase64
+                            Log-Message "Successfully converted icon to Base64"
+                        }
+                        catch {
+                            Log-Message "Failed to convert icon to Base64: $($_.Exception.Message)" "WARNING"
+                        }
+                    } else {
+                        Log-Message "No icon file found for $($app.DisplayName), proceeding without icon"
+                    }
+
+                    # Upload the app to Intune
                     Log-Message "Uploading $($app.DisplayName) to Intune..."
-                    $intuneApp = Add-IntuneWin32App -FilePath $intuneWinFile `
-                        -DisplayName $app.DisplayName `
-                        -Description $app.Description `
-                        -Publisher $app.Publisher `
-                        -InstallExperience "system" `
-                        -RestartBehavior "suppress" `
-                        -DetectionRule $detectionRule `
-                        -RequirementRule $requirementRule `
-                        -InstallCommandLine $app.InstallCommand `
-                        -UninstallCommandLine $app.UninstallCommand `
-                        -Verbose -ErrorAction Stop
+                    $intuneApp = Add-IntuneWin32App @intuneAppParams
 
                     Log-Message "Successfully uploaded $($app.DisplayName) to Intune"
                     Log-Message "App ID: $($intuneApp.id)"
@@ -1804,74 +1969,102 @@ function Search-WingetApps {
     $performSearch = {
         $resultListView.Items.Clear()
         $searchTerm = $searchTextBox.Text
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        
+        # Disable search button and show searching status
+        $searchButton.Enabled = $false
+        $searchButton.Text = "Searching..."
+        $searchForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         
         try {
-            Log-Message "Executing winget search for: $searchTerm"
-            $wingetOutput = winget search $searchTerm --accept-source-agreements 2>&1 | Out-String
-            Log-Message "Raw winget output: $wingetOutput"
+            # Create a temporary file for output
+            $tempFile = [System.IO.Path]::GetTempFileName()
             
-            # Split output into lines
-            $lines = $wingetOutput -split "`r`n"
+            # Start winget process and redirect output
+            $process = Start-Process -FilePath "winget" -ArgumentList "search $searchTerm --accept-source-agreements" -RedirectStandardOutput $tempFile -NoNewWindow -PassThru -Wait
             
-            # Skip header lines and process data lines
-            $dataLines = $lines | Where-Object { 
-                $_.Trim() -and 
-                -not $_.StartsWith("   -") -and 
-                -not $_.StartsWith("   \") -and 
-                -not $_.Contains("Name                           Id") -and 
-                -not $_.Contains("----------------------")
-            }
-            
-            foreach ($line in $dataLines) {
-                # Pattern 1: msstore pattern
-                if ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}(Unknown)\s+msstore$') {
-                    $name = $matches[1].Trim()
-                    $id = $matches[2].Trim()
-                    $version = $matches[3]
-                    $source = "msstore"
-                }
-                # Pattern 2: Version with parentheses
-                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+ \(\d+\))\s+winget$') {
-                    $name = $matches[1].Trim()
-                    $id = $matches[2].Trim()
-                    $version = $matches[3]
-                    $source = "winget"
-                }
-                # Pattern 3: Any tag with any content
-                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)(?:\s+.*?)?\s+winget$') {
-                    $name = $matches[1].Trim()
-                    $id = $matches[2].Trim()
-                    $version = $matches[3]
-                    $source = "winget"
-                }
-                # Pattern 4: Regular winget without tags
-                elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)\s+winget$') {
-                    $name = $matches[1].Trim()
-                    $id = $matches[2].Trim()
-                    $version = $matches[3]
-                    $source = "winget"
-                }
-                else {
-                    Log-Message "Failed to parse line: $line" "WARNING"
-                    continue
+            if ($process.ExitCode -eq 0) {
+                $wingetOutput = Get-Content -Path $tempFile -Raw
+                Add-Content -Path $LogFilePath -Value "$timestamp [INFO] - Raw winget output received"
+                
+                # Process on UI thread
+                $resultListView.BeginUpdate()
+                
+                # Split output into lines
+                $lines = $wingetOutput -split "`r`n"
+                
+                # Skip header lines and process data lines
+                $dataLines = $lines | Where-Object { 
+                    $_.Trim() -and 
+                    -not $_.StartsWith("   -") -and 
+                    -not $_.StartsWith("   \") -and 
+                    -not $_.Contains("Name                           Id") -and 
+                    -not $_.Contains("----------------------")
                 }
                 
-                # Create and add the list item
-                $item = New-Object System.Windows.Forms.ListViewItem
-                $item.Text = $name
-                $item.SubItems.Add($id)
-                $item.SubItems.Add($version)
-                $item.SubItems.Add($source)
+                foreach ($line in $dataLines) {
+                    # Pattern matching for different formats
+                    if ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}(Unknown)\s+msstore$') {
+                        $name = $matches[1].Trim()
+                        $id = $matches[2].Trim()
+                        $version = $matches[3]
+                        $source = "msstore"
+                    }
+                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+ \(\d+\))\s+winget$') {
+                        $name = $matches[1].Trim()
+                        $id = $matches[2].Trim()
+                        $version = $matches[3]
+                        $source = "winget"
+                    }
+                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)(?:\s+.*?)?\s+winget$') {
+                        $name = $matches[1].Trim()
+                        $id = $matches[2].Trim()
+                        $version = $matches[3]
+                        $source = "winget"
+                    }
+                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)\s+winget$') {
+                        $name = $matches[1].Trim()
+                        $id = $matches[2].Trim()
+                        $version = $matches[3]
+                        $source = "winget"
+                    }
+                    else {
+                        Add-Content -Path $LogFilePath -Value "$timestamp [WARNING] - Failed to parse line: $line"
+                        continue
+                    }
+                    
+                    # Create and add the list item to search results
+                    $item = New-Object System.Windows.Forms.ListViewItem
+                    $item.Text = $name
+                    $item.SubItems.Add($id)
+                    $item.SubItems.Add($version)
+                    $item.SubItems.Add($source)
+                    
+                    $resultListView.Items.Add($item)
+                }
                 
-                $resultListView.Items.Add($item)
-                Log-Message "Added: Name='$name' ID='$id' Version='$version' Source='$source'"
+                Add-Content -Path $LogFilePath -Value "$timestamp [INFO] - Added $($resultListView.Items.Count) items to the search results"
+            } else {
+                Add-Content -Path $LogFilePath -Value "$timestamp [ERROR] - Winget search failed with exit code: $($process.ExitCode)"
             }
-            
-            Log-Message "Added $($resultListView.Items.Count) items to the list view"
         }
         catch {
-            Log-Message "Error during winget search: $($_.Exception.Message)" "ERROR"
-            Log-Message "Stack trace: $($_.ScriptStackTrace)" "ERROR"
+            Add-Content -Path $LogFilePath -Value "$timestamp [ERROR] - Error during search: $($_.Exception.Message)"
+            [System.Windows.Forms.MessageBox]::Show(
+                "Error during search: $($_.Exception.Message)",
+                "Search Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error)
+        }
+        finally {
+            # Cleanup
+            if (Test-Path $tempFile) {
+                Remove-Item -Path $tempFile -Force
+            }
+            $resultListView.EndUpdate()
+            $searchButton.Enabled = $true
+            $searchButton.Text = "Search"
+            $searchForm.Cursor = [System.Windows.Forms.Cursors]::Default
         }
     }
 
@@ -1998,6 +2191,28 @@ $editButton.Add_Click({ Edit-App })
 $removeButton.Add_Click({ Remove-App })
 $runButton.Add_Click({ Run-MainScript })
 $searchButton.Add_Click({ Search-WingetApps })
+$grabIconButton.Add_Click({
+    if ($listView.SelectedItems.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Please select one or more apps to grab icons.",
+            "No Selection",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning)
+        return
+    }
+
+    foreach ($selectedItem in $listView.SelectedItems) {
+        # Get the app details from the config using the display name
+        $selectedApp = $script:config.Apps | Where-Object { $_.DisplayName -eq $selectedItem.Text }
+        
+        if ($selectedApp) {
+            Grab-AppIcon -WingetId $selectedApp.WingetId -DisplayName $selectedApp.DisplayName
+        }
+        else {
+            Log-Message "Could not find app configuration for $($selectedItem.Text)" "ERROR"
+        }
+    }
+})
 
 # Load apps when form is shown
 $form.Add_Shown({Load-Apps})
