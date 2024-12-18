@@ -49,6 +49,10 @@
 # Fixed issue with Update remediation
 # Date: 17-12-2024
 #########################################
+# Version 1.1.3
+# Added Grab Icon button and function
+# Date: 18-12-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -1088,29 +1092,16 @@ function Create-UpdateRemediationScript {
         $detect = @"
 `$PackageName = "$WingetId"
 
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-if (`$ResolveWingetPath) {
-    `$WingetPath = `$ResolveWingetPath[-1].Path
-    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
-    
-    if (Test-Path `$wingetExe) {
-        Set-Location -Path `$WingetPath
-        `$upgradeResult = & `$wingetExe upgrade --id `$PackageName --accept-source-agreements --accept-package-agreements
-        
-        if (`$upgradeResult -contains "No available upgrade found.") {
-            Write-Output "No updates available for `$PackageName"
-            Exit 0
-        } else {
-            Write-Output "Update available for `$PackageName"
-            Exit 1
-        }
-    } else {
-        Write-Output "Winget executable not found"
-        Exit 1
-    }
-} else {
-    Write-Output "Could not find Winget installation path"
+# Get the list of packages with updates available
+`$updates = winget list --upgrade-available | Select-String -Pattern `$PackageName
+
+# Check if the PackageName is present in the list
+if (`$updates) {
+    Write-Output "Update available"
     Exit 1
+} else {
+    Write-Output "No update available"
+    Exit 0
 }
 "@
 
@@ -1118,22 +1109,15 @@ if (`$ResolveWingetPath) {
         $remediate = @"
 `$PackageName = "$WingetId"
 
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-if (`$ResolveWingetPath) {
-    `$WingetPath = `$ResolveWingetPath[-1].Path
-    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
-    
-    if (Test-Path `$wingetExe) {
-        Set-Location -Path `$WingetPath
-        & `$wingetExe upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
-        Write-Output "Upgrade complete on `$PackageName"
-        Exit 0
-    } else {
-        Write-Output "Winget executable not found"
-        Exit 1
-    }
+# Install the update for the specified package ID
+winget upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
+
+# Check if the installation was successful
+if (`$?) {
+    Write-Output "Update installed successfully."
+    Exit 0
 } else {
-    Write-Output "Could not find Winget installation path"
+    Write-Output "Failed to install the update."
     Exit 1
 }
 "@
