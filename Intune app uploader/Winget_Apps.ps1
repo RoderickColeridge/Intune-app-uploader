@@ -53,6 +53,10 @@
 # Added Grab Icon button and function
 # Date: 18-12-2024
 #########################################
+# Version 1.1.3
+# Minor bug fixes
+# Date: 18-12-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -65,7 +69,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.2"
+$currentVersion = "1.1.3"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1092,16 +1096,27 @@ function Create-UpdateRemediationScript {
         $detect = @"
 `$PackageName = "$WingetId"
 
-# Get the list of packages with updates available
-`$updates = winget list --upgrade-available | Select-String -Pattern `$PackageName
+`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
+if (`$ResolveWingetPath) {
+    `$WingetPath = `$ResolveWingetPath[-1].Path
+    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
 
-# Check if the PackageName is present in the list
-if (`$updates) {
-    Write-Output "Update available"
-    Exit 1
-} else {
-    Write-Output "No update available"
-    Exit 0
+    # Escape special characters in the package name
+    `$escapedPackageName = [Regex]::Escape(`$PackageName)
+    
+    if (Test-Path `$wingetExe) {
+        Set-Location -Path `$WingetPath
+        `$updates = & `$wingetExe list --upgrade-available | Select-String -Pattern `$escapedPackageName
+
+        # Check if the PackageName is present in the list
+        if (`$updates) {
+            Write-Output "Update available"
+            Exit 1
+        } else {
+            Write-Output "No update available"
+            Exit 0
+        }    
+    }
 }
 "@
 
@@ -1109,16 +1124,22 @@ if (`$updates) {
         $remediate = @"
 `$PackageName = "$WingetId"
 
-# Install the update for the specified package ID
-winget upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
+`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
+if (`$ResolveWingetPath) {
+    `$WingetPath = `$ResolveWingetPath[-1].Path
+    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
 
-# Check if the installation was successful
-if (`$?) {
-    Write-Output "Update installed successfully."
-    Exit 0
-} else {
-    Write-Output "Failed to install the update."
-    Exit 1
+    # Capture the output of the winget upgrade command
+    `$output = & `$wingetExe upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
+
+    # Check if the output contains "Successfully installed"
+    if (`$output -match "Successfully installed") {
+        Write-Output "Update installed successfully."
+        Exit 0
+    } else {
+        Write-Output "Failed to install the update."
+        Exit 1
+    }
 }
 "@
 
