@@ -49,7 +49,7 @@
 # Fixed issue with Update remediation
 # Date: 17-12-2024
 #########################################
-# Version 1.1.3
+# Version 1.1.2
 # Added Grab Icon button and function
 # Date: 18-12-2024
 #########################################
@@ -65,7 +65,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.1"
+$currentVersion = "1.1.2"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
