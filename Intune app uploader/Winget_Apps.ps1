@@ -57,6 +57,10 @@
 # Minor bug fixes
 # Date: 18-12-2024
 #########################################
+# Version 1.1.4
+# Added possibility to add only Remediation script via Scripts button
+# Date: 18-12-2024
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -69,7 +73,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.3"
+$currentVersion = "1.1.4"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -184,6 +188,70 @@ $runButton.Location = New-Object System.Drawing.Point(695,220)
 $runButton.Size = New-Object System.Drawing.Size(75,23)
 $runButton.Text = "Run"
 $form.Controls.Add($runButton)
+
+# Add new button for uploading only remediation scripts
+$uploadRemediationButton = New-Object System.Windows.Forms.Button
+$uploadRemediationButton.Location = New-Object System.Drawing.Point(616,220)
+$uploadRemediationButton.Size = New-Object System.Drawing.Size(75,23)
+$uploadRemediationButton.Text = "Scripts"
+$form.Controls.Add($uploadRemediationButton)
+
+# Bind the new button to handle remediation script creation
+$uploadRemediationButton.Add_Click({
+    try {
+        # Get selected items from the ListView
+        $selectedItems = $listView.SelectedItems
+        if ($selectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Please select at least one app to create remediation scripts for.",
+                "No Selection",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return
+        }
+
+        # Get assignment preference
+        $assignmentChoice = [System.Windows.Forms.MessageBox]::Show(
+            "Would you like to assign these remediation scripts to all devices?`n`nYes = Assign to all devices`nNo = Do not assign",
+            "Assignment Selection",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+
+        $assignToAllDevices = $assignmentChoice -eq [System.Windows.Forms.DialogResult]::Yes
+
+        # Process each selected app
+        foreach ($selectedItem in $selectedItems) {
+            $appName = $selectedItem.Text
+            $app = $script:config.Apps | Where-Object { $_.DisplayName -eq $appName }
+            
+            if ($app) {
+                Log-Message "Creating remediation script for $appName..."
+                Create-UpdateRemediationScript `
+                    -AppName $app.DisplayName `
+                    -WingetId $app.WingetId `
+                    -ClientId $script:config.Credentials.ClientID `
+                    -ClientSecret $script:config.Credentials.ClientSecret `
+                    -TenantId $script:config.Credentials.TenantID `
+                    -AssignToAllDevices $assignToAllDevices
+                Log-Message "Remediation script created for $appName"
+            }
+        }
+
+        [System.Windows.Forms.MessageBox]::Show(
+            "Remediation scripts created successfully!",
+            "Success",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information)
+    }
+    catch {
+        Log-Message "Error creating remediation scripts" "ERROR" $_
+        [System.Windows.Forms.MessageBox]::Show(
+            "An error occurred while creating remediation scripts. Check the logs for details.",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error)
+    }
+})
 
 # Create log text area
 $logTextBox = New-Object System.Windows.Forms.TextBox
