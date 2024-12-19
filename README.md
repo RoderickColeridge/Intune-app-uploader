@@ -102,6 +102,7 @@ You can add applications in two ways:
     <li><strong>Del Credentials</strong>: Remove stored Azure AD credentials.</li>
     <li><strong>Logging</strong>: Detailed logs stored in the Logs directory.</li>
     <li><strong>Grab Icon</strong>: Checks if the app is installed on the local PC and grabs the icon file and uploads it to Intune. If the app does not exist on the local machine, it will get installed and the .ico will be extracted. The app will be deleted straight after.</li>
+    <li><strong>Scripts</strong>: Deploy only the remediation script for updating the app using the Scripts button</li>
 </ul>
 
 ## Configuration
