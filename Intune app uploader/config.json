@@ -1,4 +1,10 @@
 {
+  "Credentials": {
+    "ClientID": "",
+    "TenantID": "",
+    "AppId": "",
+    "ClientSecret": ""
+  },
   "Apps": [
     {
       "DisplayName": "Google Chrome",
@@ -32,11 +38,5 @@
       "WingetId": "Zoom.Zoom",
       "InstallCommand": "powershell.exe -ExecutionPolicy Bypass -File .\\Zoom_Workplace.ps1 -mode install -log \"Zoom.Zoom.log\""
     }
-  ],
-  "Credentials": {
-    "ClientID": "",
-    "TenantID": "",
-    "AppId": "",
-    "ClientSecret": ""
-  }
+  ]
 }

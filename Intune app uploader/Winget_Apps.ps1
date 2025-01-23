@@ -61,6 +61,10 @@
 # Added possibility to add only Remediation script via Scripts button
 # Date: 18-12-2024
 #########################################
+# Version 1.1.5
+# Bugfix on search function
+# Date: 23-01-2025
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -69,11 +73,11 @@ Add-Type -AssemblyName System.Drawing
 # Auto-update script
 
 # Define the URL of your script repository
-$repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/Winget_Apps.ps1"
-$versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
+$repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/Winget_Apps.ps1"
+$versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.4"
+$currentVersion = "1.1.5"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -98,6 +102,22 @@ function Check-ForUpdates {
 
 # Call the update function
 Check-ForUpdates
+
+# Define the Log-Message function
+function Log-Message {
+    param (
+        [string]$Message,
+        [string]$LogType = "INFO",
+        [System.Management.Automation.ErrorRecord]$ErrorRecord = $null
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "$timestamp [$LogType] - $Message"
+    if ($ErrorRecord) {
+        $logEntry += "`nError Details: $($ErrorRecord.Exception.Message)`nStack Trace: $($ErrorRecord.ScriptStackTrace)"
+    }
+    $logTextBox.AppendText("$logEntry`r`n")
+    Add-Content -Path $LogFilePath -Value $logEntry
+}
 
 # Define general variables
 # Get script directory
@@ -558,54 +578,91 @@ function Remove-GraphCredentials {
     try {
         Log-Message "Starting Graph credential removal process..."
         
-        try {
-            # Disconnect from Graph if connected
-            if (Get-MgContext) {
-                Log-Message "Disconnecting from Microsoft Graph..."
-                Disconnect-MgGraph
-                Log-Message "Successfully disconnected from Microsoft Graph"
-            }
-            else {
-                Log-Message "No active Microsoft Graph connection found"
-            }
-
-            # Clear token cache
-            $tokenCachePath = "$env:LOCALAPPDATA\Microsoft\TokenCache"
-            if (Test-Path $tokenCachePath) {
-                Log-Message "Clearing token cache at: $tokenCachePath"
-                Remove-Item -Path "$tokenCachePath\*" -Force -ErrorAction SilentlyContinue
-                Log-Message "Token cache cleared successfully"
-            }
-            else {
-                Log-Message "No token cache directory found at: $tokenCachePath"
-            }
-
-            # Remove stored Graph credentials from Windows Credential Manager
-            Log-Message "Removing Graph credentials from Windows Credential Manager..."
-            $credentialList = cmdkey /list | Select-String "Microsoft Graph PowerShell"
-            foreach ($cred in $credentialList) {
-                $targetName = ($cred -split "Target:\s+")[-1]
-                cmdkey /delete:$targetName
-                Log-Message "Removed credential: $targetName"
-            }
-
-            # Clear module cache
-            Log-Message "Removing Graph PowerShell modules from session..."
-            Get-Module Microsoft.Graph* | Remove-Module -Force
-            Log-Message "Graph PowerShell modules removed from session"
-
-            Log-Message "Graph credential removal completed successfully"
+        # Check for active Graph connection and disconnect
+        $context = Get-MgContext -ErrorAction SilentlyContinue
+        if ($context) {
+            Disconnect-MgGraph -ErrorAction SilentlyContinue
+            Log-Message "Successfully disconnected from Graph API"
         }
-        catch {
-            Log-Message "Error during Graph credential removal: $($_.Exception.Message)" "ERROR"
-            throw
+
+        # Clear token cache
+        $tokenCachePath = [System.IO.Path]::Combine($env:LOCALAPPDATA, "Microsoft", "PowerShell", "TokenCache")
+        if (Test-Path $tokenCachePath) {
+            Remove-Item -Path $tokenCachePath -Force -Recurse -ErrorAction SilentlyContinue
+            Log-Message "Token cache cleared"
+        }
+
+        # Remove stored Graph credentials from Windows Credential Manager
+        $graphCreds = cmdkey /list | Where-Object { $_ -like "*Microsoft Graph PowerShell*" }
+        if ($graphCreds) {
+            $graphCreds | ForEach-Object {
+                if ($_ -match "Target: (.+)") {
+                    cmdkey /delete:$($matches[1])
+                }
+            }
+            Log-Message "Removed Graph credentials from Windows Credential Manager"
+        }
+
+        # Clear module cache
+        $moduleCachePath = [System.IO.Path]::Combine($env:LOCALAPPDATA, "Microsoft", "PowerShell", "ModuleCache")
+        if (Test-Path $moduleCachePath) {
+            Remove-Item -Path $moduleCachePath -Force -Recurse -ErrorAction SilentlyContinue
+            Log-Message "Module cache cleared"
         }
     }
     catch {
-        Log-Message "Critical error in Graph credential removal: $($_.Exception.Message)" "ERROR"
+        Log-Message "Error during Graph credential removal: $($_.Exception.Message)" "ERROR"
     }
 }
 
+
+function Initialize-Modules {
+    try {
+        $requiredModules = @(
+            'Microsoft.Graph.Authentication',
+            'Microsoft.Graph.Applications'
+        )
+
+        foreach ($module in $requiredModules) {
+            # Check if module is already loaded
+            $loadedModule = Get-Module -Name $module -ErrorAction SilentlyContinue
+            
+            if (-not $loadedModule) {
+                # Check if module is installed
+                if (-not (Get-Module -ListAvailable -Name $module)) {
+                    Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber
+                    Log-Message "Installed module: $module"
+                }
+                
+                # Import module only if not already loaded
+                try {
+                    Import-Module $module -ErrorAction Stop
+                    Log-Message "Successfully loaded module: $module"
+                }
+                catch {
+                    # Ignore "Assembly already loaded" errors
+                    if ($_.Exception.Message -notmatch "Assembly with same name is already loaded") {
+                        throw $_
+                    }
+                }
+            }
+        }
+        return $true
+    }
+    catch {
+        # Only log actual errors, not assembly loading issues
+        if ($_.Exception.Message -notmatch "Assembly with same name is already loaded") {
+            Log-Message "Failed to load required modules: $($_.Exception.Message)" "ERROR"
+            [System.Windows.Forms.MessageBox]::Show(
+                "Failed to load required modules: $($_.Exception.Message)",
+                "Module Loading Error",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning)
+            return $false
+        }
+        return $true
+    }
+}
 
 function Remove-AllCredentials {
     try {
@@ -616,10 +673,6 @@ function Remove-AllCredentials {
         # Remove stored credentials
         Remove-StoredCredentials
         Log-Message "Stored credentials removed successfully"
-
-        # Remove Graph credentials
-        Remove-GraphCredentials
-        Log-Message "Graph credentials removed successfully"
 
         # Reset the configuration with correct structure
         $existingApps = $script:config.Apps
@@ -906,22 +959,6 @@ function Get-IconFromFolder {
         return ($iconCount -gt 0)
     }
     return $false
-}
-
-# Define the Log-Message function
-function Log-Message {
-    param (
-        [string]$Message,
-        [string]$LogType = "INFO",
-        [System.Management.Automation.ErrorRecord]$ErrorRecord = $null
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp [$LogType] - $Message"
-    if ($ErrorRecord) {
-        $logEntry += "`nError Details: $($ErrorRecord.Exception.Message)`nStack Trace: $($ErrorRecord.ScriptStackTrace)"
-    }
-    $logTextBox.AppendText("$logEntry`r`n")
-    Add-Content -Path $LogFilePath -Value $logEntry
 }
 
 # Define cleanup function
@@ -1963,22 +2000,6 @@ catch {
     }
 }
 
-# Define the Log-Message function
-function Log-Message {
-    param (
-        [string]$Message,
-        [string]$LogType = "INFO",
-        [System.Management.Automation.ErrorRecord]$ErrorRecord = $null
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp [$LogType] - $Message"
-    if ($ErrorRecord) {
-        $logEntry += "`nError Details: $($ErrorRecord.Exception.Message)`nStack Trace: $($ErrorRecord.ScriptStackTrace)"
-    }
-    $logTextBox.AppendText("$logEntry`r`n")
-    Add-Content -Path $LogFilePath -Value $logEntry
-}
-
 # Define cleanup function
 function Cleanup-TempFiles {
     param (
@@ -2000,7 +2021,7 @@ function Cleanup-TempFiles {
 function Search-WingetApps {
     $searchForm = New-Object System.Windows.Forms.Form
     $searchForm.Text = "Search Winget Apps"
-    $searchForm.Size = New-Object System.Drawing.Size(600,400)
+    $searchForm.Size = New-Object System.Drawing.Size(800,400)
     $searchForm.StartPosition = "CenterScreen"
 
     $searchLabel = New-Object System.Windows.Forms.Label
@@ -2022,17 +2043,17 @@ function Search-WingetApps {
 
     $resultListView = New-Object System.Windows.Forms.ListView
     $resultListView.Location = New-Object System.Drawing.Point(10,50)
-    $resultListView.Size = New-Object System.Drawing.Size(560,250)
+    $resultListView.Size = New-Object System.Drawing.Size(760,250)
     $resultListView.View = [System.Windows.Forms.View]::Details
     $resultListView.FullRowSelect = $true
     $resultListView.Columns.Add("Name", 200)
-    $resultListView.Columns.Add("ID", 150)
+    $resultListView.Columns.Add("ID", 200)
     $resultListView.Columns.Add("Version", 100)
     $resultListView.Columns.Add("Source", 100)
     $searchForm.Controls.Add($resultListView)
 
     $addButton = New-Object System.Windows.Forms.Button
-    $addButton.Location = New-Object System.Drawing.Point(250,310)
+    $addButton.Location = New-Object System.Drawing.Point(350,310)
     $addButton.Size = New-Object System.Drawing.Size(75,23)
     $addButton.Text = "Add"
     $addButton.Enabled = $false
@@ -2042,7 +2063,6 @@ function Search-WingetApps {
     $performSearch = {
         $resultListView.Items.Clear()
         $searchTerm = $searchTextBox.Text
-        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         
         # Disable search button and show searching status
         $searchButton.Enabled = $false
@@ -2050,79 +2070,94 @@ function Search-WingetApps {
         $searchForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         
         try {
-            # Create a temporary file for output
-            $tempFile = [System.IO.Path]::GetTempFileName()
+            # Find Winget path
+            $wingetPath = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+            if (-not $wingetPath) {
+                $ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue
+                if ($ResolveWingetPath) {
+                    $wingetPath = $ResolveWingetPath[-1].Path
+                }
+            }
+
+            if (-not $wingetPath) {
+                throw "Winget not found on the system"
+            }
+
+            # Execute Winget search with all sources
+            $searchOutput = & $wingetPath search $searchTerm --accept-source-agreements 2>&1
             
-            # Start winget process and redirect output
-            $process = Start-Process -FilePath "winget" -ArgumentList "search $searchTerm --accept-source-agreements" -RedirectStandardOutput $tempFile -NoNewWindow -PassThru -Wait
+            # Process each line of output
+            $startProcessing = $false
+            $headerFound = $false
             
-            if ($process.ExitCode -eq 0) {
-                $wingetOutput = Get-Content -Path $tempFile -Raw
-                Add-Content -Path $LogFilePath -Value "$timestamp [INFO] - Raw winget output received"
+            foreach ($line in $searchOutput) {
+                # Convert to string in case we get warning/error objects
+                $line = $line.ToString()
                 
-                # Process on UI thread
-                $resultListView.BeginUpdate()
+                # Skip empty lines
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
                 
-                # Split output into lines
-                $lines = $wingetOutput -split "`r`n"
-                
-                # Skip header lines and process data lines
-                $dataLines = $lines | Where-Object { 
-                    $_.Trim() -and 
-                    -not $_.StartsWith("   -") -and 
-                    -not $_.StartsWith("   \") -and 
-                    -not $_.Contains("Name                           Id") -and 
-                    -not $_.Contains("----------------------")
+                # Check for header line
+                if ($line -match "^Name|^-{2,}") {
+                    if ($line -match "^Name") { 
+                        $headerFound = $true 
+                    }
+                    if ($headerFound -and $line -match "^-{2,}") {
+                        $startProcessing = $true
+                    }
+                    continue
                 }
                 
-                foreach ($line in $dataLines) {
-                    # Pattern matching for different formats
-                    if ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}(Unknown)\s+msstore$') {
-                        $name = $matches[1].Trim()
-                        $id = $matches[2].Trim()
-                        $version = $matches[3]
-                        $source = "msstore"
+                if ($startProcessing -and -not [string]::IsNullOrWhiteSpace($line)) {
+                    try {
+                        # First, try splitting by two or more spaces
+                        $parts = $line -split '\s{2,}'
+                        
+                        # If we don't get enough parts, try alternative splitting
+                        if ($parts.Count -lt 3) {
+                            # Handle cases where items are space-separated
+                            $parts = $line.Trim() -split ' '
+                        }
+                        
+                        if ($parts.Count -ge 3) {
+                            # For lines with space-separated values (like FortiClient VPN case)
+                            if ($line -match '(.*?)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)$') {
+                                $name = $matches[1].Trim()
+                                $id = $matches[2].Trim()
+                                $version = $matches[3].Trim()
+                                $source = $matches[4].Trim()
+                            } else {
+                                # Fallback to original parsing
+                                $name = $parts[0].Trim()
+                                $id = $parts[1].Trim()
+                                $version = $parts[2].Trim()
+                                $source = if ($parts.Count -ge 4) { $parts[3].Trim() } else { "Unknown" }
+                            }
+
+                            # Create and add the list item to search results
+                            $item = New-Object System.Windows.Forms.ListViewItem($name)
+                            $item.SubItems.Add($id)
+                            $item.SubItems.Add($version)
+                            $item.SubItems.Add($source)
+                            $resultListView.Items.Add($item)
+                        }
                     }
-                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+ \(\d+\))\s+winget$') {
-                        $name = $matches[1].Trim()
-                        $id = $matches[2].Trim()
-                        $version = $matches[3]
-                        $source = "winget"
+                    catch {
+                        # Only log actual errors
+                        Log-Message "Error processing search results: $($_.Exception.Message)" "ERROR"
                     }
-                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)(?:\s+.*?)?\s+winget$') {
-                        $name = $matches[1].Trim()
-                        $id = $matches[2].Trim()
-                        $version = $matches[3]
-                        $source = "winget"
-                    }
-                    elseif ($line -match '^(.+?)\s{2,}([^\s].*?)\s{2,}([\d\.]+)\s+winget$') {
-                        $name = $matches[1].Trim()
-                        $id = $matches[2].Trim()
-                        $version = $matches[3]
-                        $source = "winget"
-                    }
-                    else {
-                        Add-Content -Path $LogFilePath -Value "$timestamp [WARNING] - Failed to parse line: $line"
-                        continue
-                    }
-                    
-                    # Create and add the list item to search results
-                    $item = New-Object System.Windows.Forms.ListViewItem
-                    $item.Text = $name
-                    $item.SubItems.Add($id)
-                    $item.SubItems.Add($version)
-                    $item.SubItems.Add($source)
-                    
-                    $resultListView.Items.Add($item)
                 }
-                
-                Add-Content -Path $LogFilePath -Value "$timestamp [INFO] - Added $($resultListView.Items.Count) items to the search results"
-            } else {
-                Add-Content -Path $LogFilePath -Value "$timestamp [ERROR] - Winget search failed with exit code: $($process.ExitCode)"
+            }
+            
+            if ($resultListView.Items.Count -eq 0) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "No results found for: $searchTerm",
+                    "No Results",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Information)
             }
         }
         catch {
-            Add-Content -Path $LogFilePath -Value "$timestamp [ERROR] - Error during search: $($_.Exception.Message)"
             [System.Windows.Forms.MessageBox]::Show(
                 "Error during search: $($_.Exception.Message)",
                 "Search Error",
@@ -2130,11 +2165,6 @@ function Search-WingetApps {
                 [System.Windows.Forms.MessageBoxIcon]::Error)
         }
         finally {
-            # Cleanup
-            if (Test-Path $tempFile) {
-                Remove-Item -Path $tempFile -Force
-            }
-            $resultListView.EndUpdate()
             $searchButton.Enabled = $true
             $searchButton.Text = "Search"
             $searchForm.Cursor = [System.Windows.Forms.Cursors]::Default
@@ -2290,7 +2320,7 @@ $grabIconButton.Add_Click({
 # Load apps when form is shown
 $form.Add_Shown({Load-Apps})
 
-# Add form closing event handler (add this before $form.ShowDialog())
+# Add form closing event handler
 $form.Add_FormClosing({
     param($sender, $e)
     
@@ -2300,10 +2330,27 @@ $form.Add_FormClosing({
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Information)
     
-    # Execute cleanup in specified order
-    Remove-AzureADApp
-    Remove-StoredCredentials
-    Remove-GraphCredentials
+    try {
+        # Execute cleanup in specified order
+        Remove-AzureADApp
+        Remove-StoredCredentials
+        
+        # Check if Microsoft.Graph.Authentication module is loaded
+        if (Get-Module -Name Microsoft.Graph.Authentication) {
+            try {
+                Disconnect-MgGraph -ErrorAction SilentlyContinue
+            }
+            catch {
+                # Ignore any disconnect errors
+            }
+        }
+        
+        # Remove Graph credentials without trying to load the module again
+        Remove-GraphCredentials
+    }
+    catch {
+        Log-Message "Cleanup error during form closing: $($_.Exception.Message)" "WARNING"
+    }
 })
 
 # Show the form
