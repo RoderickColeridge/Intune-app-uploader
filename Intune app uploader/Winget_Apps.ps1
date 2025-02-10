@@ -65,6 +65,10 @@
 # Bugfix on search function
 # Date: 23-01-2025
 #########################################
+# Version 1.1.6
+# Bugfix on search function
+# Date: 10-02-2025
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -77,7 +81,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/hea
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.5"
+$currentVersion = "1.1.6"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -615,52 +619,104 @@ function Remove-GraphCredentials {
     }
 }
 
+# Add required modules array
+$script:requiredModules = @(
+    'Microsoft.Graph.Authentication',
+    'Microsoft.Graph.Applications',
+    'Microsoft.Graph.Identity.DirectoryManagement',
+    'IntuneWin32App'
+)
 
-function Initialize-Modules {
+function Initialize-GraphConnection {
     try {
-        $requiredModules = @(
-            'Microsoft.Graph.Authentication',
-            'Microsoft.Graph.Applications'
-        )
-
-        foreach ($module in $requiredModules) {
-            # Check if module is already loaded
-            $loadedModule = Get-Module -Name $module -ErrorAction SilentlyContinue
-            
-            if (-not $loadedModule) {
-                # Check if module is installed
-                if (-not (Get-Module -ListAvailable -Name $module)) {
-                    Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber
-                    Log-Message "Installed module: $module"
-                }
-                
-                # Import module only if not already loaded
-                try {
-                    Import-Module $module -ErrorAction Stop
-                    Log-Message "Successfully loaded module: $module"
-                }
-                catch {
-                    # Ignore "Assembly already loaded" errors
-                    if ($_.Exception.Message -notmatch "Assembly with same name is already loaded") {
-                        throw $_
-                    }
-                }
-            }
+        Log-Message "Initializing Graph connection..."
+        
+        # Check if we have credentials in config
+        if (-not $script:config.Credentials -or 
+            [string]::IsNullOrEmpty($script:config.Credentials.TenantID) -or
+            [string]::IsNullOrEmpty($script:config.Credentials.ClientID) -or
+            [string]::IsNullOrEmpty($script:config.Credentials.ClientSecret)) {
+            Log-Message "No credentials found in config. Please register the application first."
+            return $false
         }
+
+        # Check current connection state
+        $graphContext = Get-MgContext -ErrorAction SilentlyContinue
+        if (-not $graphContext) {
+            Log-Message "No active Graph connection. Connecting..."
+            
+            # Connect to Microsoft Graph
+            Connect-MgGraph -TenantId $script:config.Credentials.TenantID -ClientId $script:config.Credentials.ClientID -ClientSecret $script:config.Credentials.ClientSecret -ErrorAction Stop
+            
+            # Connect to Intune Graph
+            Connect-MSIntuneGraph -TenantID $script:config.Credentials.TenantID `
+                                -ClientID $script:config.Credentials.ClientID `
+                                -ClientSecret $script:config.Credentials.ClientSecret `
+                                -ErrorAction Stop
+            
+            Log-Message "Successfully connected to Graph APIs"
+        } else {
+            Log-Message "Using existing Graph connection"
+        }
+        
         return $true
     }
     catch {
-        # Only log actual errors, not assembly loading issues
-        if ($_.Exception.Message -notmatch "Assembly with same name is already loaded") {
-            Log-Message "Failed to load required modules: $($_.Exception.Message)" "ERROR"
-            [System.Windows.Forms.MessageBox]::Show(
-                "Failed to load required modules: $($_.Exception.Message)",
-                "Module Loading Error",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Warning)
-            return $false
+        Log-Message "Failed to initialize Graph connection: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+}
+
+function Initialize-RequiredModules {
+    try {
+        Log-Message "Starting initialization of required modules..."
+        
+        foreach ($module in $script:requiredModules) {
+            Log-Message "Processing module: $module"
+            
+            # Check if module is already loaded with correct version
+            $loadedModule = Get-Module -Name $module -ErrorAction SilentlyContinue
+            
+            if ($loadedModule) {
+                Log-Message "Module $module is already loaded (Version: $($loadedModule.Version))"
+                continue
+            }
+            
+            # Check if module is installed
+            $installedModule = Get-Module -ListAvailable -Name $module | Sort-Object Version -Descending | Select-Object -First 1
+            
+            if (-not $installedModule) {
+                Log-Message "Installing module: $module"
+                Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                Log-Message "Successfully installed $module"
+            }
+            
+            # Import module
+            try {
+                Log-Message "Importing module: $module"
+                Import-Module -Name $module -Force -ErrorAction Stop
+                Log-Message "Successfully imported $module"
+            }
+            catch {
+                if ($_.Exception.Message -match "Assembly with same name is already loaded") {
+                    Log-Message "Module $module is already loaded (Assembly)" "WARNING"
+                    continue
+                }
+                throw
+            }
         }
+        
+        Log-Message "All required modules initialized successfully"
         return $true
+    }
+    catch {
+        Log-Message "Failed to initialize required modules: $($_.Exception.Message)" "ERROR"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Failed to initialize required modules: $($_.Exception.Message)",
+            "Module Initialization Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error)
+        return $false
     }
 }
 
@@ -981,23 +1037,7 @@ function Cleanup-TempFiles {
 function Register-IntuneApp {
     try {
         Log-Message "Starting app registration process..."
-
-        # Install required modules if not present
-        $requiredModules = @(
-            'Microsoft.Graph.Authentication',
-            'Microsoft.Graph.Applications',
-            'Microsoft.Graph.Identity.DirectoryManagement'
-        )
-
-        foreach ($module in $requiredModules) {
-            if (-not (Get-Module -ListAvailable -Name $module)) {
-                Log-Message "Installing $module module..."
-                Install-Module -Name $module -Force -AllowClobber -Scope CurrentUser
-            }
-            Import-Module -Name $module -Force
-            Log-Message "Loaded $module module"
-        }
-
+        
         # Connect to Microsoft Graph with required permissions
         Log-Message "Connecting to Microsoft Graph..."
         $graphScopes = @(
@@ -1012,7 +1052,6 @@ function Register-IntuneApp {
             'DeviceManagementApps.ReadWrite.All',
             'DeviceManagementConfiguration.ReadWrite.All',
             'DeviceManagementManagedDevices.ReadWrite.All'
-            
         )
         Connect-MgGraph -Scopes $graphScopes | Out-Null
 
@@ -1317,16 +1356,6 @@ function Remove-AzureADApp {
 
         Log-Message "Found App ID: $($script:config.Credentials.AppId)"
 
-        # Install and import required module if not present
-        if (-not (Get-Module -ListAvailable -Name 'Microsoft.Graph.Applications')) {
-            Log-Message "Installing Microsoft.Graph.Applications module..."
-            Install-Module -Name 'Microsoft.Graph.Applications' -Force -AllowClobber -Scope CurrentUser
-            Log-Message "Microsoft.Graph.Applications module installed successfully"
-        }
-        Import-Module -Name 'Microsoft.Graph.Applications' -Force
-        Log-Message "Microsoft.Graph.Applications module imported"
-        
-
         # Connect to Microsoft Graph with required scope
         Log-Message "Connecting to Microsoft Graph..."
         Connect-MgGraph -Scopes "Application.ReadWrite.All" | Out-Null
@@ -1353,6 +1382,23 @@ function Remove-AzureADApp {
 # Main script function
 function Run-MainScript {
     try {
+        # Ensure Graph connection is established
+        if (-not (Initialize-GraphConnection)) {
+            throw "Failed to establish Graph connection"
+        }
+        
+        # Explicitly connect to Intune Graph with stored credentials
+        try {
+            Connect-MSIntuneGraph -TenantID $script:config.Credentials.TenantID `
+                                -ClientID $script:config.Credentials.ClientID `
+                                -ClientSecret $script:config.Credentials.ClientSecret `
+                                -ErrorAction Stop
+            Log-Message "Connected to Intune Graph API successfully"
+        }
+        catch {
+            throw "Failed to connect to Intune Graph API: $($_.Exception.Message)"
+        }
+
         # Start transcript logging
         $transcriptFileName = "MainScript_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
         $transcriptPath = Join-Path -Path $LogDirectory -ChildPath $transcriptFileName
@@ -1427,11 +1473,6 @@ function Run-MainScript {
         }
 
         try {
-            # Install the IntuneWin32App module
-            Log-Message "Installing IntuneWin32App module..."
-            Install-Module -Name IntuneWin32App -Force -ErrorAction Stop
-            Log-Message "IntuneWin32App module installed successfully."
-
             # Ensure C:\IntunePackages exists
             if (-not (Test-Path -Path $TempDir)) {
                 New-Item -Path $TempDir -ItemType Directory -ErrorAction Stop | Out-Null
@@ -1447,10 +1488,6 @@ function Run-MainScript {
             } else {
                 Log-Message "IntuneWinAppUtil.exe already exists."
             }
-
-            # Connect to Intune Graph API
-            Connect-MSIntuneGraph -TenantID $script:config.Credentials.TenantID -ClientID $script:config.Credentials.ClientID -ClientSecret $script:config.Credentials.ClientSecret -ErrorAction Stop
-            Log-Message "Connected to Intune Graph API successfully."
 
             # Process each application
             foreach ($app in $appsToProcess) {
@@ -2110,36 +2147,27 @@ function Search-WingetApps {
                 
                 if ($startProcessing -and -not [string]::IsNullOrWhiteSpace($line)) {
                     try {
-                        # First, try splitting by two or more spaces
+                        # Adjust the parsing logic to correctly extract the Winget ID
+                        # Split by whitespace and ensure we capture the correct fields
                         $parts = $line -split '\s{2,}'
-                        
-                        # If we don't get enough parts, try alternative splitting
-                        if ($parts.Count -lt 3) {
-                            # Handle cases where items are space-separated
-                            $parts = $line.Trim() -split ' '
-                        }
-                        
+
+                        # If the output format is different, adjust the regex accordingly
                         if ($parts.Count -ge 3) {
-                            # For lines with space-separated values (like FortiClient VPN case)
-                            if ($line -match '(.*?)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)$') {
-                                $name = $matches[1].Trim()
-                                $id = $matches[2].Trim()
-                                $version = $matches[3].Trim()
-                                $source = $matches[4].Trim()
-                            } else {
-                                # Fallback to original parsing
-                                $name = $parts[0].Trim()
-                                $id = $parts[1].Trim()
-                                $version = $parts[2].Trim()
-                                $source = if ($parts.Count -ge 4) { $parts[3].Trim() } else { "Unknown" }
-                            }
+                            # Assuming the format is: Name, ID, Version, Source
+                            $name = $parts[0].Trim()
+                            $id = $parts[1].Trim()  # Ensure this captures the correct Winget ID
+                            $version = $parts[2].Trim()
+                            $source = if ($parts.Count -ge 4) { $parts[3].Trim() } else { "Unknown" }
 
                             # Create and add the list item to search results
                             $item = New-Object System.Windows.Forms.ListViewItem($name)
-                            $item.SubItems.Add($id)
+                            $item.SubItems.Add($id)  # Ensure the Winget ID is added correctly
                             $item.SubItems.Add($version)
                             $item.SubItems.Add($source)
                             $resultListView.Items.Add($item)
+                        } else {
+                            # Log if the expected format is not met
+                            Log-Message "Unexpected output format: $line" "WARNING"
                         }
                     }
                     catch {
@@ -2317,8 +2345,12 @@ $grabIconButton.Add_Click({
     }
 })
 
-# Load apps when form is shown
-$form.Add_Shown({Load-Apps})
+# Modify the form load event to initialize modules
+$form.Add_Shown({
+    if (Initialize-RequiredModules) {
+        Load-Apps  # This will just load any existing apps from config without connecting
+    }
+})
 
 # Add form closing event handler
 $form.Add_FormClosing({
