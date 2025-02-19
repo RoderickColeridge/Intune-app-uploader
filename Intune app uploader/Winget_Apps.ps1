@@ -69,6 +69,10 @@
 # Bugfix on search function
 # Date: 10-02-2025
 #########################################
+# Version 1.1.7
+# Implemented Microsoft.WinGet.Client for search funtion
+# Date: 19-02-2025
+#########################################
 
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -77,11 +81,11 @@ Add-Type -AssemblyName System.Drawing
 # Auto-update script
 
 # Define the URL of your script repository
-$repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/Winget_Apps.ps1"
-$versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Scripts/refs/heads/main/Intune%20app%20uploader/version.txt"
+$repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/Winget_Apps.ps1"
+$versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.6"
+$currentVersion = "1.1.7"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -508,36 +512,33 @@ function Remove-App {
         [System.Windows.Forms.MessageBoxIcon]::Question)
     
     if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-        # Try to get the script path
-        if ($PSScriptRoot) {
-            $scriptRoot = $PSScriptRoot
-        } elseif ($psISE) {
-            $scriptRoot = Split-Path -Parent $psISE.CurrentFile.FullPath
-        } else {
-            $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-        }
-        
-        # If we still don't have a valid path, use the current directory
-        if (-not $scriptRoot) {
-            $scriptRoot = Get-Location
-        }
-        
-        $configPath = Join-Path -Path $scriptRoot -ChildPath "config.json"
-        
-        if (Test-Path $configPath) {
-            $config = Get-Content -Path $configPath | ConvertFrom-Json
-            
-            # Remove each selected app
+        try {
+            # Remove each selected app from config
             foreach ($appName in $appNames) {
-                $config.Apps = $config.Apps | Where-Object { $_.DisplayName -ne $appName }
+                $config.Apps = @($config.Apps | Where-Object { $_.DisplayName -ne $appName })
                 Log-Message "Removed app: $appName"
             }
             
-            $config | ConvertTo-Json | Set-Content -Path $configPath
-            Load-Apps
+            # Save the updated config
+            Save-Config
+            
+            # Clear and reload the ListView
+            $listView.Items.Clear()
+            
+            # Only reload items if there are apps in the config
+            if ($config.Apps -and $config.Apps.Count -gt 0) {
+                foreach ($app in $config.Apps) {
+                    $item = New-Object System.Windows.Forms.ListViewItem($app.DisplayName)
+                    $item.SubItems.Add($app.WingetId)
+                    $item.SubItems.Add($app.Publisher)
+                    $listView.Items.Add($item)
+                }
+            }
+            
             Log-Message "Successfully removed $(($appNames).Count) app(s)"
-        } else {
-            Log-Message "Config file not found. Unable to remove apps." "ERROR"
+        }
+        catch {
+            Log-Message "Error removing apps: $($_.Exception.Message)" "ERROR"
         }
     }
 }
@@ -624,7 +625,8 @@ $script:requiredModules = @(
     'Microsoft.Graph.Authentication',
     'Microsoft.Graph.Applications',
     'Microsoft.Graph.Identity.DirectoryManagement',
-    'IntuneWin32App'
+    'IntuneWin32App',
+    'Microsoft.WinGet.Client'
 )
 
 function Initialize-GraphConnection {
@@ -1182,12 +1184,9 @@ function Register-IntuneApp {
 
         # Show success message
         [System.Windows.Forms.MessageBox]::Show(
-            "Application registered and configured successfully!`n`n" +
-            "Tenant ID: $tenantId`n" +
-            "Client ID: $($app.AppId)`n" +
-            "Client Secret: $($secret.SecretText)`n`n" +
-            "Admin consent has been automatically granted.",
-            "Registration Success",
+            $form,
+            "Application registered successfully!",
+            "Registration Complete",
             [System.Windows.Forms.MessageBoxButtons]::OK,
             [System.Windows.Forms.MessageBoxIcon]::Information)
 
@@ -2107,76 +2106,18 @@ function Search-WingetApps {
         $searchForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         
         try {
-            # Find Winget path
-            $wingetPath = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-            if (-not $wingetPath) {
-                $ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue
-                if ($ResolveWingetPath) {
-                    $wingetPath = $ResolveWingetPath[-1].Path
-                }
+            # Perform the search using Find-WinGetPackage
+            $searchResults = Find-WinGetPackage -Query $searchTerm
+
+            # Process results
+            foreach ($result in $searchResults) {
+                $item = New-Object System.Windows.Forms.ListViewItem($result.Name)
+                $item.SubItems.Add($result.Id)
+                $item.SubItems.Add($result.Version)
+                $item.SubItems.Add($result.Source)
+                $resultListView.Items.Add($item)
             }
 
-            if (-not $wingetPath) {
-                throw "Winget not found on the system"
-            }
-
-            # Execute Winget search with all sources
-            $searchOutput = & $wingetPath search $searchTerm --accept-source-agreements 2>&1
-            
-            # Process each line of output
-            $startProcessing = $false
-            $headerFound = $false
-            
-            foreach ($line in $searchOutput) {
-                # Convert to string in case we get warning/error objects
-                $line = $line.ToString()
-                
-                # Skip empty lines
-                if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                
-                # Check for header line
-                if ($line -match "^Name|^-{2,}") {
-                    if ($line -match "^Name") { 
-                        $headerFound = $true 
-                    }
-                    if ($headerFound -and $line -match "^-{2,}") {
-                        $startProcessing = $true
-                    }
-                    continue
-                }
-                
-                if ($startProcessing -and -not [string]::IsNullOrWhiteSpace($line)) {
-                    try {
-                        # Adjust the parsing logic to correctly extract the Winget ID
-                        # Split by whitespace and ensure we capture the correct fields
-                        $parts = $line -split '\s{2,}'
-
-                        # If the output format is different, adjust the regex accordingly
-                        if ($parts.Count -ge 3) {
-                            # Assuming the format is: Name, ID, Version, Source
-                            $name = $parts[0].Trim()
-                            $id = $parts[1].Trim()  # Ensure this captures the correct Winget ID
-                            $version = $parts[2].Trim()
-                            $source = if ($parts.Count -ge 4) { $parts[3].Trim() } else { "Unknown" }
-
-                            # Create and add the list item to search results
-                            $item = New-Object System.Windows.Forms.ListViewItem($name)
-                            $item.SubItems.Add($id)  # Ensure the Winget ID is added correctly
-                            $item.SubItems.Add($version)
-                            $item.SubItems.Add($source)
-                            $resultListView.Items.Add($item)
-                        } else {
-                            # Log if the expected format is not met
-                            Log-Message "Unexpected output format: $line" "WARNING"
-                        }
-                    }
-                    catch {
-                        # Only log actual errors
-                        Log-Message "Error processing search results: $($_.Exception.Message)" "ERROR"
-                    }
-                }
-            }
-            
             if ($resultListView.Items.Count -eq 0) {
                 [System.Windows.Forms.MessageBox]::Show(
                     "No results found for: $searchTerm",
