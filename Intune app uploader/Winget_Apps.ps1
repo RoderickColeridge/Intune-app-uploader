@@ -74,6 +74,12 @@
 # Date: 19-02-2025
 #########################################
 
+# Suppress provider prompts
+$env:POWERSHELL_UPDATECHECK = "Off"
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+# Force install NuGet provider without prompts
+$null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -Confirm:$false
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -679,7 +685,8 @@ function Initialize-RequiredModules {
 
         if (-not $nugetProvider -or $nugetProvider.Version -lt $minimumVersion) {
             Log-Message "Installing NuGet provider..."
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+            # Add -Confirm:$false to suppress the prompt
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -Confirm:$false | Out-Null
             Log-Message "NuGet provider installed successfully"
         }
         
