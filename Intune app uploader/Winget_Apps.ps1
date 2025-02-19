@@ -467,8 +467,8 @@ function Add-App {
         $packageId = $wingetTextBox.Text
 
         # Generate install and uninstall commands using the safe file name
-        $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
-        $uninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
+        $installCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
+        $uninstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\${safeFileName}_uninstall.ps1"
 
         $newApp = @{
             DisplayName = $nameTextBox.Text
@@ -672,6 +672,16 @@ function Initialize-GraphConnection {
 function Initialize-RequiredModules {
     try {
         Log-Message "Starting initialization of required modules..."
+        
+        # Check and install NuGet provider first
+        $nugetProvider = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
+        $minimumVersion = [version]"2.8.5.201"
+
+        if (-not $nugetProvider -or $nugetProvider.Version -lt $minimumVersion) {
+            Log-Message "Installing NuGet provider..."
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+            Log-Message "NuGet provider installed successfully"
+        }
         
         foreach ($module in $script:requiredModules) {
             Log-Message "Processing module: $module"
@@ -877,8 +887,8 @@ function Edit-App {
                 # Update install and uninstall commands if the name has changed
                 if ($appToEdit.DisplayName -ne $appName) {
                     $safeFileName = $nameTextBox.Text -replace '\s', '_'
-                    $appToEdit.InstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
-                    $appToEdit.UninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
+                    $appToEdit.InstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\$safeFileName.ps1 -mode install -log `"$packageId.log`""
+                    $appToEdit.UninstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\${safeFileName}_uninstall.ps1"
                 }
                 
                 $config | ConvertTo-Json | Set-Content -Path $configPath
@@ -2203,8 +2213,8 @@ function Search-WingetApps {
 
             if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
                 $safeFileName = $displayName -replace '\s', '_'
-                $installCommand = "powershell.exe -ExecutionPolicy Bypass -File .\$safeFileName.ps1 -mode install -log `"$wingetId.log`""
-                $uninstallCommand = "powershell.exe -ExecutionPolicy Bypass -File .\${safeFileName}_uninstall.ps1"
+                $installCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\$safeFileName.ps1 -mode install -log `"$wingetId.log`""
+                $uninstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\${safeFileName}_uninstall.ps1"
 
                 $newApp = @{
                     DisplayName = $displayName
