@@ -73,6 +73,10 @@
 # Implemented Microsoft.WinGet.Client for search funtion
 # Date: 19-02-2025
 #########################################
+# Version 1.1.8
+# Bugfix on import modules
+# Date: 25-04-2025
+#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
@@ -93,7 +97,7 @@ $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-ap
 # Current version of the script
 $currentVersion = "1.1.7"
 
-# Get the directory of the current script
+# Get the directory of the current script using multiple fallback methods
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $localScriptPath = Join-Path -Path $scriptRoot -ChildPath "Winget_Apps.ps1"
 
@@ -628,7 +632,6 @@ function Remove-GraphCredentials {
 
 # Add required modules array
 $script:requiredModules = @(
-    'Microsoft.Graph.Authentication',
     'Microsoft.Graph.Applications',
     'Microsoft.Graph.Identity.DirectoryManagement',
     'IntuneWin32App',
@@ -709,19 +712,17 @@ function Initialize-RequiredModules {
                 Install-Module -Name $module -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
                 Log-Message "Successfully installed $module"
             }
-            
-            # Import module
+        }
+
+        # Import the required modules
+        foreach ($module in $script:requiredModules) {
             try {
                 Log-Message "Importing module: $module"
-                Import-Module -Name $module -Force -ErrorAction Stop
+                Import-Module -Name $module -ErrorAction Stop
                 Log-Message "Successfully imported $module"
-            }
-            catch {
-                if ($_.Exception.Message -match "Assembly with same name is already loaded") {
-                    Log-Message "Module $module is already loaded (Assembly)" "WARNING"
-                    continue
-                }
-                throw
+            } catch {
+                Log-Message "Error loading module $module`: $($_.Exception.Message)" "ERROR"
+                continue
             }
         }
         
