@@ -73,14 +73,16 @@
 # Implemented Microsoft.WinGet.Client for search funtion
 # Date: 19-02-2025
 #########################################
+# Version 1.1.8
+# Bug fix on Module loading (Thanks to https://github.com/stefanhuibers)
+# Date: 26-04-2025
+#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-# Force install NuGet provider without prompts
-$null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -Confirm:$false
-
+# Load required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -91,7 +93,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploa
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.7"
+$currentVersion = "1.1.8"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -628,7 +630,6 @@ function Remove-GraphCredentials {
 
 # Add required modules array
 $script:requiredModules = @(
-    'Microsoft.Graph.Authentication',
     'Microsoft.Graph.Applications',
     'Microsoft.Graph.Identity.DirectoryManagement',
     'IntuneWin32App',
@@ -713,7 +714,7 @@ function Initialize-RequiredModules {
             # Import module
             try {
                 Log-Message "Importing module: $module"
-                Import-Module -Name $module -Force -ErrorAction Stop
+                Import-Module -Name $module -ErrorAction Stop
                 Log-Message "Successfully imported $module"
             }
             catch {
