@@ -1,26 +1,26 @@
 {
+  "Credentials": {
+    "ClientID": "",
+    "AppID": "",
+    "TenantID": "",
+    "ClientSecret": ""
+  },
   "Apps": [
     {
-      "DisplayName": "7-Zip",
-      "Publisher": "7-Zip",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit",
+      "Description": "Adobe Acrobat Reader (64-bit)",
+      "InstallCommand": "%windir%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -Executionpolicy Bypass -file .\\Adobe_Acrobat_Reader_(64-bit).ps1 -mode install -log \"Adobe.Acrobat.Reader.64-bit.log\"",
+      "UninstallCommand": "%windir%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -Executionpolicy Bypass -file .\\Adobe_Acrobat_Reader_(64-bit)_uninstall.ps1",
+      "Publisher": "Adobe",
+      "DisplayName": "Adobe Acrobat Reader (64-bit)"
+    },
+    {
       "WingetId": "7zip.7zip",
       "Description": "7-Zip",
       "InstallCommand": "%windir%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -Executionpolicy Bypass -file .\\7-Zip.ps1 -mode install -log \"7zip.7zip.log\"",
-      "UninstallCommand": "%windir%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -Executionpolicy Bypass -file .\\7-Zip_uninstall.ps1"
-    },
-    {
-      "Publisher": "Adobe",
-      "Description": "Adobe",
-      "WingetId": "Adobe.Acrobat.Reader.64-bit",
-      "UninstallCommand": "powershell.exe -ExecutionPolicy Bypass -File .\\Adobe_Acrobat_Reader_(64-bit)_uninstall.ps1",
-      "DisplayName": "Adobe Acrobat Reader (64-bit)",
-      "InstallCommand": "powershell.exe -ExecutionPolicy Bypass -File .\\Adobe_Acrobat_Reader_(64-bit).ps1 -mode install -log \"Adobe.Acrobat.Reader.64-bit.log\""
+      "UninstallCommand": "%windir%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -Executionpolicy Bypass -file .\\7-Zip_uninstall.ps1",
+      "Publisher": "7-Zip",
+      "DisplayName": "7-Zip"
     }
-  ],
-  "Credentials": {
-    "AppID": "",
-    "TenantID": "",
-    "ClientID": "",
-    "ClientSecret": ""
-  }
+  ]
 }
