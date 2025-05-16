@@ -77,6 +77,11 @@
 # Bug fix on Module loading (Thanks to https://github.com/stefanhuibers)
 # Date: 26-04-2025
 #########################################
+# Version 1.1.9
+# Added available for uninstall $true
+# Built in check foor presence of winget.exe during uninstall
+# Date: 26-05-2025
+#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
@@ -93,7 +98,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploa
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.8"
+$currentVersion = "1.1.9"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1841,7 +1846,41 @@ Start-Transcript -Path `$logPath -Append
 if (`$ResolveWingetPath) {
     `$WingetPath = `$ResolveWingetPath[-1].Path
     `$wingetExe = Join-Path -Path `$WingetPath -ChildPath 'winget.exe'
-    
+
+    # Check if winget.exe exists, if not, download and extract it
+    if (-not (Test-Path `$wingetExe)) {
+        Write-Host "winget.exe not found in `$WingetPath. Attempting to download and install WinGet..."
+
+        # Download 7zr.exe and msixbundle
+        `$tempDir = "`$env:TEMP\WinGet-Stage"
+        New-Item -ItemType Directory -Path `$tempDir -Force | Out-Null
+        `$wingetBundle = Join-Path `$tempDir "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        `$sevenZip = Join-Path `$tempDir "7zr.exe"
+
+        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile `$wingetBundle -UseBasicParsing
+        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile `$sevenZip -UseBasicParsing
+
+        # Extract msixbundle
+        & `$sevenZip x `$wingetBundle "-o`$tempDir" -y
+
+        # Find AppInstaller_x64.msix and extract it
+        `$appInstallerMsix = Get-ChildItem -Path `$tempDir -Filter "AppInstaller_x64.msix" -Recurse | Select-Object -First 1
+        if (`$appInstallerMsix) {
+            & `$sevenZip x `$appInstallerMsix.FullName "-o`$WingetPath" -y
+        }
+
+        # Clean up
+        Remove-Item `$tempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Re-check for winget.exe
+        if (-not (Test-Path `$wingetExe)) {
+            Write-Host "Failed to install winget.exe."
+            Exit 1
+        } else {
+            Write-Host "winget.exe installed successfully."
+        }
+    }
+
     if (Test-Path `$wingetExe) {
         Write-Host "Found Winget at: `$wingetExe"
         
@@ -1962,6 +2001,7 @@ catch {
                         InstallCommandLine = $app.InstallCommand
                         UninstallCommandLine = $app.UninstallCommand
                         CompanyPortalFeaturedApp = $true
+                        AllowAvailableUninstall = $true
                         Verbose = $true
                         ErrorAction = "Stop"
                     }
