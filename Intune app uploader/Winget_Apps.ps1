@@ -73,18 +73,12 @@
 # Implemented Microsoft.WinGet.Client for search funtion
 # Date: 19-02-2025
 #########################################
-# Version 1.1.8
-# Bugfix on import modules
-# Date: 25-04-2025
-#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
-# Force install NuGet provider without prompts
-$null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -Confirm:$false
-
+# Load required assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
@@ -95,7 +89,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploa
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.7"
+$currentVersion = "1.1.9"
 
 # Get the directory of the current script using multiple fallback methods
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1841,7 +1835,41 @@ Start-Transcript -Path `$logPath -Append
 if (`$ResolveWingetPath) {
     `$WingetPath = `$ResolveWingetPath[-1].Path
     `$wingetExe = Join-Path -Path `$WingetPath -ChildPath 'winget.exe'
-    
+
+    # Check if winget.exe exists, if not, download and extract it
+    if (-not (Test-Path `$wingetExe)) {
+        Write-Host "winget.exe not found in `$WingetPath. Attempting to download and install WinGet..."
+
+        # Download 7zr.exe and msixbundle
+        `$tempDir = "`$env:TEMP\WinGet-Stage"
+        New-Item -ItemType Directory -Path `$tempDir -Force | Out-Null
+        `$wingetBundle = Join-Path `$tempDir "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        `$sevenZip = Join-Path `$tempDir "7zr.exe"
+
+        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile `$wingetBundle -UseBasicParsing
+        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile `$sevenZip -UseBasicParsing
+
+        # Extract msixbundle
+        & `$sevenZip x `$wingetBundle "-o`$tempDir" -y
+
+        # Find AppInstaller_x64.msix and extract it
+        `$appInstallerMsix = Get-ChildItem -Path `$tempDir -Filter "AppInstaller_x64.msix" -Recurse | Select-Object -First 1
+        if (`$appInstallerMsix) {
+            & `$sevenZip x `$appInstallerMsix.FullName "-o`$WingetPath" -y
+        }
+
+        # Clean up
+        Remove-Item `$tempDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Re-check for winget.exe
+        if (-not (Test-Path `$wingetExe)) {
+            Write-Host "Failed to install winget.exe."
+            Exit 1
+        } else {
+            Write-Host "winget.exe installed successfully."
+        }
+    }
+
     if (Test-Path `$wingetExe) {
         Write-Host "Found Winget at: `$wingetExe"
         
@@ -1962,6 +1990,7 @@ catch {
                         InstallCommandLine = $app.InstallCommand
                         UninstallCommandLine = $app.UninstallCommand
                         CompanyPortalFeaturedApp = $true
+                        AllowAvailableUninstall = $true
                         Verbose = $true
                         ErrorAction = "Stop"
                     }

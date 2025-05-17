@@ -1,0 +1,63 @@
+2025-04-26 10:08:52 [INFO] - Starting initialization of required modules...
+2025-04-26 10:08:53 [INFO] - Processing module: Microsoft.Graph.Applications
+2025-04-26 10:08:53 [INFO] - Module Microsoft.Graph.Applications is already loaded (Version: 2.26.1)
+2025-04-26 10:08:53 [INFO] - Processing module: Microsoft.Graph.Identity.DirectoryManagement
+2025-04-26 10:08:53 [INFO] - Module Microsoft.Graph.Identity.DirectoryManagement is already loaded (Version: 2.26.1)
+2025-04-26 10:08:53 [INFO] - Processing module: IntuneWin32App
+2025-04-26 10:08:53 [INFO] - Module IntuneWin32App is already loaded (Version: 1.4.4)
+2025-04-26 10:08:53 [INFO] - Processing module: Microsoft.WinGet.Client
+2025-04-26 10:08:53 [INFO] - Module Microsoft.WinGet.Client is already loaded (Version: 1.9.25190)
+2025-04-26 10:08:53 [INFO] - All required modules initialized successfully
+2025-04-26 10:08:53 [INFO] - Loaded apps from config file successfully.
+2025-04-26 10:09:01 [INFO] - Starting Azure AD app removal process...
+2025-04-26 10:09:01 [INFO] - No App ID found in config, skipping app removal
+2025-04-26 10:09:01 [INFO] - Starting credential removal process...
+2025-04-26 10:09:01 [INFO] - Current credentials exist: False
+2025-04-26 10:09:01 [INFO] - Clearing credentials from memory...
+2025-04-26 10:09:01 [INFO] - Credentials cleared from memory
+2025-04-26 10:09:01 [INFO] - Saving updated config to: C:\Users\r.coleridge\OneDrive - Xantion ICT\Documenten\GitHub\GithubScripts\Intune app uploader\config.json
+2025-04-26 10:09:02 [INFO] - Config file updated successfully
+2025-04-26 10:09:02 [INFO] - Credential removal completed successfully
+2025-04-26 10:09:02 [INFO] - Starting Graph credential removal process...
+2025-04-26 10:09:09 [INFO] - Starting initialization of required modules...
+2025-04-26 10:09:09 [INFO] - Processing module: Microsoft.Graph.Applications
+2025-04-26 10:09:09 [INFO] - Module Microsoft.Graph.Applications is already loaded (Version: 2.26.1)
+2025-04-26 10:09:09 [INFO] - Processing module: Microsoft.Graph.Identity.DirectoryManagement
+2025-04-26 10:09:09 [INFO] - Module Microsoft.Graph.Identity.DirectoryManagement is already loaded (Version: 2.26.1)
+2025-04-26 10:09:09 [INFO] - Processing module: IntuneWin32App
+2025-04-26 10:09:09 [INFO] - Module IntuneWin32App is already loaded (Version: 1.4.4)
+2025-04-26 10:09:09 [INFO] - Processing module: Microsoft.WinGet.Client
+2025-04-26 10:09:09 [INFO] - Module Microsoft.WinGet.Client is already loaded (Version: 1.9.25190)
+2025-04-26 10:09:09 [INFO] - All required modules initialized successfully
+2025-04-26 10:09:09 [INFO] - Loaded apps from config file successfully.
+2025-04-26 10:09:35 [INFO] - Starting Azure AD app removal process...
+2025-04-26 10:09:35 [INFO] - No App ID found in config, skipping app removal
+2025-04-26 10:09:35 [INFO] - Starting credential removal process...
+2025-04-26 10:09:35 [INFO] - Current credentials exist: False
+2025-04-26 10:09:35 [INFO] - Clearing credentials from memory...
+2025-04-26 10:09:35 [INFO] - Credentials cleared from memory
+2025-04-26 10:09:35 [INFO] - Saving updated config to: C:\Users\r.coleridge\OneDrive - Xantion ICT\Documenten\GitHub\GithubScripts\Intune app uploader\config.json
+2025-04-26 10:09:35 [INFO] - Config file updated successfully
+2025-04-26 10:09:35 [INFO] - Credential removal completed successfully
+2025-04-26 10:09:35 [INFO] - Starting Graph credential removal process...
+2025-04-26 10:10:26 [INFO] - Starting initialization of required modules...
+2025-04-26 10:10:26 [INFO] - Processing module: Microsoft.Graph.Applications
+2025-04-26 10:10:26 [INFO] - Module Microsoft.Graph.Applications is already loaded (Version: 2.26.1)
+2025-04-26 10:10:26 [INFO] - Processing module: Microsoft.Graph.Identity.DirectoryManagement
+2025-04-26 10:10:26 [INFO] - Module Microsoft.Graph.Identity.DirectoryManagement is already loaded (Version: 2.26.1)
+2025-04-26 10:10:26 [INFO] - Processing module: IntuneWin32App
+2025-04-26 10:10:26 [INFO] - Module IntuneWin32App is already loaded (Version: 1.4.4)
+2025-04-26 10:10:26 [INFO] - Processing module: Microsoft.WinGet.Client
+2025-04-26 10:10:26 [INFO] - Module Microsoft.WinGet.Client is already loaded (Version: 1.9.25190)
+2025-04-26 10:10:26 [INFO] - All required modules initialized successfully
+2025-04-26 10:10:26 [INFO] - Loaded apps from config file successfully.
+2025-04-26 10:10:34 [INFO] - Starting Azure AD app removal process...
+2025-04-26 10:10:34 [INFO] - No App ID found in config, skipping app removal
+2025-04-26 10:10:34 [INFO] - Starting credential removal process...
+2025-04-26 10:10:34 [INFO] - Current credentials exist: False
+2025-04-26 10:10:34 [INFO] - Clearing credentials from memory...
+2025-04-26 10:10:34 [INFO] - Credentials cleared from memory
+2025-04-26 10:10:34 [INFO] - Saving updated config to: C:\Users\r.coleridge\OneDrive - Xantion ICT\Documenten\GitHub\GithubScripts\Intune app uploader\config.json
+2025-04-26 10:10:34 [INFO] - Config file updated successfully
+2025-04-26 10:10:34 [INFO] - Credential removal completed successfully
+2025-04-26 10:10:34 [INFO] - Starting Graph credential removal process...
