@@ -61,3 +61,28 @@
 2025-04-26 10:10:34 [INFO] - Config file updated successfully
 2025-04-26 10:10:34 [INFO] - Credential removal completed successfully
 2025-04-26 10:10:34 [INFO] - Starting Graph credential removal process...
+2025-05-18 12:14:02 [INFO] - Starting initialization of required modules...
+2025-05-18 12:14:05 [INFO] - Processing module: Microsoft.Graph.Applications
+2025-05-18 12:14:05 [INFO] - Processing module: Microsoft.Graph.Identity.DirectoryManagement
+2025-05-18 12:14:06 [INFO] - Processing module: IntuneWin32App
+2025-05-18 12:14:06 [INFO] - Processing module: Microsoft.WinGet.Client
+2025-05-18 12:14:07 [INFO] - Importing module: Microsoft.Graph.Applications
+2025-05-18 12:14:14 [INFO] - Successfully imported Microsoft.Graph.Applications
+2025-05-18 12:14:14 [INFO] - Importing module: Microsoft.Graph.Identity.DirectoryManagement
+2025-05-18 12:14:22 [INFO] - Successfully imported Microsoft.Graph.Identity.DirectoryManagement
+2025-05-18 12:14:22 [INFO] - Importing module: IntuneWin32App
+2025-05-18 12:14:24 [INFO] - Successfully imported IntuneWin32App
+2025-05-18 12:14:24 [INFO] - Importing module: Microsoft.WinGet.Client
+2025-05-18 12:14:26 [INFO] - Successfully imported Microsoft.WinGet.Client
+2025-05-18 12:14:26 [INFO] - All required modules initialized successfully
+2025-05-18 12:14:26 [INFO] - Loaded apps from config file successfully.
+2025-05-18 12:14:30 [INFO] - Starting Azure AD app removal process...
+2025-05-18 12:14:30 [INFO] - No App ID found in config, skipping app removal
+2025-05-18 12:14:30 [INFO] - Starting credential removal process...
+2025-05-18 12:14:30 [INFO] - Current credentials exist: False
+2025-05-18 12:14:30 [INFO] - Clearing credentials from memory...
+2025-05-18 12:14:30 [INFO] - Credentials cleared from memory
+2025-05-18 12:14:30 [INFO] - Saving updated config to: C:\Users\r.coleridge\OneDrive - Xantion ICT\Documenten\GitHub\GithubScripts\Intune app uploader\config.json
+2025-05-18 12:14:30 [INFO] - Config file updated successfully
+2025-05-18 12:14:30 [INFO] - Credential removal completed successfully
+2025-05-18 12:14:30 [INFO] - Starting Graph credential removal process...
