@@ -80,7 +80,15 @@
 # Version 1.1.9
 # Added available for uninstall $true
 # Built in check foor presence of winget.exe during uninstall
-# Date: 26-05-2025
+# Date: 15-05-2025
+#########################################
+# Version 2.0.0
+# Bugfixes
+# Date: 18-05-2025
+#########################################
+# Version 2.0.1
+# Bugfixes installscript
+# Date: 21-05-2025
 #########################################
 
 # Suppress provider prompts
@@ -98,7 +106,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploa
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "1.1.9"
+$currentVersion = "2.0.1"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1525,12 +1533,9 @@ function Run-MainScript {
 # Define the Winget Package Name
 `$PackageName = '$($app.WingetId)'
 
-function Write-Log(`$message) #Log script messages to temp directory
-{
+function Write-Log(`$message) {
     `$LogMessage = ((Get-Date -Format "MM-dd-yy HH:MM:ss ") + `$message)
     `$LogPath = "`$env:programdata\Microsoft\IntuneManagementExtension\Logs"
-    
-    # Create log directory if it doesn't exist
     if (-not (Test-Path `$LogPath)) {
         try {
             New-Item -Path `$LogPath -ItemType Directory -Force | Out-Null
@@ -1540,14 +1545,11 @@ function Write-Log(`$message) #Log script messages to temp directory
             Write-Host "Failed to create log directory: `$(`$_.Exception.Message)"
         }
     }
-
-    # Ensure we have a valid package name for the log file
     `$logFileName = if ([string]::IsNullOrWhiteSpace(`$PackageName)) { 
-        "WingetInstall_$(Get-Date -Format 'yyyyMMdd_HHmmss')" 
+        "WingetInstall_20250521_115118" 
     } else { 
         `$PackageName.Replace(" ", "_").Replace("/", "_")
     }
-
     if (Test-Path `$LogPath) {
         `$logFilePath = Join-Path -Path `$LogPath -ChildPath "`$logFileName.log"
         Out-File -InputObject `$LogMessage -FilePath `$logFilePath -Append -Encoding utf8
@@ -1640,16 +1642,12 @@ function Install-VisualC {
         Write-Log `$_.Exception.Message
         exit 1
     }
-
     try {
         Write-Log "Installing Visual C++ Runtime..."
         `$processInfo = Start-Process -FilePath "`$env:temp\vc_redist.x64.exe" -ArgumentList "/q /norestart" -Wait -PassThru -NoNewWindow
         `$exitCode = `$processInfo.ExitCode
         Write-Log "Visual C++ installation completed with exit code: `$exitCode"
-        
-        # Cleanup
         Remove-Item "`$env:Temp\vc_redist.x64.exe" -Force -ErrorAction SilentlyContinue
-        
         return `$exitCode
     }
     catch {
@@ -1661,8 +1659,17 @@ function Install-VisualC {
 function WingetInstallPackage {
     try {
         Write-Log "Attempting to install `$PackageName using WinGet"
-        `$processInfo = Start-Process -FilePath `$WinGet -ArgumentList "install --id `$PackageName --source winget --silent --accept-package-agreements --accept-source-agreements" -Wait -PassThru -NoNewWindow
-        `$exitCode = `$processInfo.ExitCode
+        `$arguments = @(
+            "install"
+            "--id", `$PackageName
+            "--source", "winget"
+            "--silent"
+            "--accept-package-agreements"
+            "--accept-source-agreements"
+        )
+        `$output = & `$WinGet @arguments 2>&1
+        Write-Log "WinGet output: `$output"
+        `$exitCode = `$LASTEXITCODE
         Write-Log "WinGet installation completed with exit code: `$exitCode"
         return `$exitCode
     }
@@ -1677,7 +1684,7 @@ function Test-AppInstalled {
         [string]`$AppName
     )
     
-    `$installed = Get-WmiObject -Class Win32_Product | Where-Object { `$_.Name -like "*`$AppName*" }
+    `$installed = Get-CimInstance -ClassName Win32_Product | Where-Object { `$_.Name -like "*`$AppName*" }
     return `$null -ne `$installed
 }
 
@@ -1817,9 +1824,6 @@ catch {
     exit 1
 }
 finally {
-    # Ensure all PowerShell processes related to this script are terminated
-    `$currentPID = `$PID
-    Get-WmiObject Win32_Process | Where-Object { `$_.ProcessName -eq "powershell.exe" -and `$_.ParentProcessId -eq `$currentPID } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force }
     Write-Log "Script execution completed. Exiting."
 }
 #endregion
@@ -1830,98 +1834,138 @@ finally {
                     # Create Winget uninstall script
                     $wingetUninstallScriptPath = Join-Path -Path $TempDir -ChildPath "${safeFileName}_uninstall.ps1"
                     $wingetUninstallScriptContent = @"
-# Start Transcript
-`$logDirectory = "C:\ProgramData\Microsoft\IntuneManagementExtension\Logs"
-if (-not (Test-Path `$logDirectory)) {
-    New-Item -ItemType Directory -Path `$logDirectory -Force | Out-Null
+function Write-Log(`$message) #Log script messages to temp directory
+{
+    `$LogMessage = ((Get-Date -Format "MM-dd-yy HH:MM:ss ") + `$message)
+    `$LogPath = "`$env:programdata\Microsoft\IntuneManagementExtension\Logs"
+    
+    # Create log directory if it doesn't exist
+    if (-not (Test-Path `$LogPath)) {
+        try {
+            New-Item -Path `$LogPath -ItemType Directory -Force | Out-Null
+            Write-Host "Created log directory: `$LogPath"
+        }
+        catch {
+            Write-Host "Failed to create log directory: `$(`$_.Exception.Message)"
+        }
+    }
+
+    # Ensure we have a valid package name for the log file
+    `$logFileName = if ([string]::IsNullOrWhiteSpace(`$PackageName)) { 
+        "WingetInstall_$(Get-Date -Format 'yyyyMMdd_HHmmss')" 
+    } else { 
+        `$PackageName.Replace(" ", "_").Replace("/", "_")
+    }
+
+    if (Test-Path `$LogPath) {
+        `$logFilePath = Join-Path -Path `$LogPath -ChildPath "`$logFileName.log"
+        Out-File -InputObject `$LogMessage -FilePath `$logFilePath -Append -Encoding utf8
+    }
+    Write-Host `$message
 }
-`$logPath = Join-Path -Path `$logDirectory -ChildPath "${safeFileName}_Uninstall_`$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
-Start-Transcript -Path `$logPath -Append
 
 # Define the Winget Package Name
 `$PackageName = '$($app.WingetId)'
 
-# Find Winget executable path
-`$ResolveWingetPath = Resolve-Path "C:\ProgramData\Microsoft.DesktopAppInstaller"
-if (`$ResolveWingetPath) {
-    `$WingetPath = `$ResolveWingetPath[-1].Path
-    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath 'winget.exe'
-
-    # Check if winget.exe exists, if not, download and extract it
-    if (-not (Test-Path `$wingetExe)) {
-        Write-Host "winget.exe not found in `$WingetPath. Attempting to download and install WinGet..."
-
-        # Download 7zr.exe and msixbundle
-        `$tempDir = "`$env:TEMP\WinGet-Stage"
-        New-Item -ItemType Directory -Path `$tempDir -Force | Out-Null
-        `$wingetBundle = Join-Path `$tempDir "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-        `$sevenZip = Join-Path `$tempDir "7zr.exe"
-
-        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile `$wingetBundle -UseBasicParsing
-        Invoke-WebRequest -Uri "https://www.7-zip.org/a/7zr.exe" -OutFile `$sevenZip -UseBasicParsing
-
-        # Extract msixbundle
-        & `$sevenZip x `$wingetBundle "-o`$tempDir" -y
-
-        # Find AppInstaller_x64.msix and extract it
-        `$appInstallerMsix = Get-ChildItem -Path `$tempDir -Filter "AppInstaller_x64.msix" -Recurse | Select-Object -First 1
-        if (`$appInstallerMsix) {
-            & `$sevenZip x `$appInstallerMsix.FullName "-o`$WingetPath" -y
-        }
-
-        # Clean up
-        Remove-Item `$tempDir -Recurse -Force -ErrorAction SilentlyContinue
-
-        # Re-check for winget.exe
-        if (-not (Test-Path `$wingetExe)) {
-            Write-Host "Failed to install winget.exe."
-            Exit 1
-        } else {
-            Write-Host "winget.exe installed successfully."
-        }
+function Download-Winget {
+    `$ProgressPreference = 'SilentlyContinue'
+    `$7zipFolder = "`${env:WinDir}\Temp\7zip"
+    try {
+        Write-Log "Downloading WinGet..."
+        New-Item -ItemType Directory -Path "`${env:WinDir}\Temp\WinGet-Stage" -Force | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri https://aka.ms/getwinget -OutFile "`${env:WinDir}\Temp\WinGet-Stage\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
     }
+    catch {
+        Write-Log "Failed to download WinGet!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    try {
+        Write-Log "Downloading 7zip CLI executable..."
+        New-Item -ItemType Directory -Path `$7zipFolder -Force | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Uri https://www.7-zip.org/a/7zr.exe -OutFile "`$7zipFolder\7zr.exe"
+        Invoke-WebRequest -UseBasicParsing -Uri https://www.7-zip.org/a/7z2408-extra.7z -OutFile "`$7zipFolder\7zr-extra.7z"
+        Write-Log "Extracting 7zip CLI executable to `${7zipFolder}..."
+        `$arguments = @(
+            "x",
+            "``"`$7zipFolder\7zr-extra.7z``"",
+            "-o``"`$7zipFolder``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7zr.exe" -ArgumentList `$arguments -Wait -NoNewWindow
+    }
+    catch {
+        Write-Log "Failed to download 7zip CLI executable!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    try {
+        New-Item -ItemType Directory -Path "`${env:ProgramData}\Microsoft.DesktopAppInstaller" -Force | Out-Null
+        Write-Log "Extracting WinGet..."
+        `$bundleArguments = @(
+            "x",
+            "``"`${env:WinDir}\Temp\WinGet-Stage\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle``"",
+            "-o``"`${env:WinDir}\Temp\WinGet-Stage``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7za.exe" -ArgumentList `$bundleArguments -Wait -NoNewWindow
+        `$installerArguments = @(
+            "x",
+            "``"`${env:WinDir}\Temp\WinGet-Stage\AppInstaller_x64.msix``"",
+            "-o``"`${env:ProgramData}\Microsoft.DesktopAppInstaller``"",
+            "-y"
+        )
+        Start-Process -FilePath "`$7zipFolder\7za.exe" -ArgumentList `$installerArguments -Wait -NoNewWindow
+    }
+    catch {
+        Write-Log "Failed to extract WinGet!"
+        Write-Log `$_.Exception.Message
+        exit 1
+    }
+    if (-Not (Test-Path "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe")) {
+        Write-Log "Failed to extract WinGet!"
+        exit 1
+    }
+    `$script:WinGet = "`${env:ProgramData}\Microsoft.DesktopAppInstaller\WinGet.exe"
+}
 
-    if (Test-Path `$wingetExe) {
-        Write-Host "Found Winget at: `$wingetExe"
-        
-        # Check if app is installed
-        `$InstalledApps = & `$wingetExe list --id `$PackageName
+# Find Winget executable path
+`$wingetExe = "C:\ProgramData\Microsoft.DesktopAppInstaller\winget.exe"
+if (-not (Test-Path `$wingetExe)) {
+    Write-Log "winget.exe not found. Attempting to download and install WinGet..."
+    Download-Winget
+    `$wingetExe = `$script:WinGet
+}
 
-        if (`$InstalledApps -match `$PackageName) {
-            Write-Host "Trying to uninstall `$PackageName"
-            try {
-                # Change to Winget directory and run uninstall
-                Set-Location -Path `$WingetPath
-                & `$wingetExe uninstall --id `$PackageName --silent
-                
-                if (`$LASTEXITCODE -eq 0) {
-                    Write-Host "Successfully uninstalled `$PackageName"
-                    Exit 0
-                } else {
-                    Write-Host "Failed to uninstall `$PackageName. Exit code: `$LASTEXITCODE"
-                    Exit 1
-                }
-            }
-            catch {
-                Write-Host "Error during uninstall: `$(`$_.Exception.Message)"
+if (Test-Path `$wingetExe) {
+    Write-Log "Found Winget at: `$wingetExe"
+    # Check if app is installed
+    `$InstalledApps = & `$wingetExe list --id `$PackageName
+    if (`$InstalledApps -match `$PackageName) {
+        Write-Log "Trying to uninstall `$PackageName"
+        try {
+            & `$wingetExe uninstall --id `$PackageName --silent
+            if (`$LASTEXITCODE -eq 0) {
+                Write-Log "Successfully uninstalled `$PackageName"
+                Exit 0
+            } else {
+                Write-Log "Failed to uninstall `$PackageName. Exit code: `$LASTEXITCODE"
                 Exit 1
             }
         }
-        else {
-            Write-Host "`$PackageName is not installed or detected"
-            Exit 0
+        catch {
+            Write-Log "Error during uninstall: `$(`$_.Exception.Message)"
+            Exit 1
         }
-    } else {
-        Write-Host "Winget executable not found at expected location"
-        Exit 1
+    }
+    else {
+        Write-Log "`$PackageName is not installed or detected"
+        Exit 0
     }
 } else {
-    Write-Host "Could not find Winget installation path"
+    Write-Log "Winget executable not found at expected location"
     Exit 1
 }
-
-# Stop Transcript
-Stop-Transcript
 "@
                     $wingetUninstallScriptContent | Out-File -FilePath $wingetUninstallScriptPath -Encoding UTF8 -ErrorAction Stop
                     Log-Message "Created Winget uninstall script for $($app.DisplayName)."

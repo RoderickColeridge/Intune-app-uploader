@@ -1,4 +1,10 @@
 {
+  "Credentials": {
+    "ClientID": "",
+    "AppID": "",
+    "TenantID": "",
+    "ClientSecret": ""
+  },
   "Apps": [
     {
       "WingetId": "Adobe.Acrobat.Reader.64-bit",
@@ -16,11 +22,5 @@
       "Publisher": "7-Zip",
       "DisplayName": "7-Zip"
     }
-  ],
-  "Credentials": {
-    "ClientID": "",
-    "AppID": "",
-    "TenantID": "",
-    "ClientSecret": ""
-  }
+  ]
 }
