@@ -96,6 +96,7 @@
 # Added assignment options for All Users
 # Added possibility to set assignment to required or available
 # Added automated logo upload function
+# Rename to Winget2Intune
 # Date: 16-07-2025
 #########################################
 
