@@ -90,6 +90,14 @@
 # Bugfixes installscript
 # Date: 21-05-2025
 #########################################
+# Version 2.0.2
+# Removed proactive remediations for updating apps
+# Removed Grab Icon and Scripts buttons
+# Added assignment options for All Users
+# Added possibility to set assignment to required or available
+# Added automated logo upload function
+# Date: 16-07-2025
+#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
@@ -106,7 +114,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploa
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Intune-app-uploader/refs/heads/main/Intune%20app%20uploader/version.txt"
 
 # Current version of the script
-$currentVersion = "2.0.1"
+$currentVersion = "2.0.2"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -225,82 +233,11 @@ $searchButton.Size = New-Object System.Drawing.Size(100,23)
 $searchButton.Text = "Search Winget"
 $form.Controls.Add($searchButton)
 
-# Add the "Grab Icon" button with matching style
-$grabIconButton = New-Object System.Windows.Forms.Button
-$grabIconButton.Location = New-Object System.Drawing.Point(540,220)
-$grabIconButton.Size = New-Object System.Drawing.Size(75,23)
-$grabIconButton.Text = "Grab Icon"
-$form.Controls.Add($grabIconButton)
-
 $runButton = New-Object System.Windows.Forms.Button
 $runButton.Location = New-Object System.Drawing.Point(695,220)
 $runButton.Size = New-Object System.Drawing.Size(75,23)
 $runButton.Text = "Run"
 $form.Controls.Add($runButton)
-
-# Add new button for uploading only remediation scripts
-$uploadRemediationButton = New-Object System.Windows.Forms.Button
-$uploadRemediationButton.Location = New-Object System.Drawing.Point(616,220)
-$uploadRemediationButton.Size = New-Object System.Drawing.Size(75,23)
-$uploadRemediationButton.Text = "Scripts"
-$form.Controls.Add($uploadRemediationButton)
-
-# Bind the new button to handle remediation script creation
-$uploadRemediationButton.Add_Click({
-    try {
-        # Get selected items from the ListView
-        $selectedItems = $listView.SelectedItems
-        if ($selectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Please select at least one app to create remediation scripts for.",
-                "No Selection",
-                [System.Windows.Forms.MessageBoxButtons]::OK,
-                [System.Windows.Forms.MessageBoxIcon]::Warning)
-            return
-        }
-
-        # Get assignment preference
-        $assignmentChoice = [System.Windows.Forms.MessageBox]::Show(
-            "Would you like to assign these remediation scripts to all devices?`n`nYes = Assign to all devices`nNo = Do not assign",
-            "Assignment Selection",
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Question)
-
-        $assignToAllDevices = $assignmentChoice -eq [System.Windows.Forms.DialogResult]::Yes
-
-        # Process each selected app
-        foreach ($selectedItem in $selectedItems) {
-            $appName = $selectedItem.Text
-            $app = $script:config.Apps | Where-Object { $_.DisplayName -eq $appName }
-            
-            if ($app) {
-                Log-Message "Creating remediation script for $appName..."
-                Create-UpdateRemediationScript `
-                    -AppName $app.DisplayName `
-                    -WingetId $app.WingetId `
-                    -ClientId $script:config.Credentials.ClientID `
-                    -ClientSecret $script:config.Credentials.ClientSecret `
-                    -TenantId $script:config.Credentials.TenantID `
-                    -AssignToAllDevices $assignToAllDevices
-                Log-Message "Remediation script created for $appName"
-            }
-        }
-
-        [System.Windows.Forms.MessageBox]::Show(
-            "Remediation scripts created successfully!",
-            "Success",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Information)
-    }
-    catch {
-        Log-Message "Error creating remediation scripts" "ERROR" $_
-        [System.Windows.Forms.MessageBox]::Show(
-            "An error occurred while creating remediation scripts. Check the logs for details.",
-            "Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error)
-    }
-})
 
 # Create log text area
 $logTextBox = New-Object System.Windows.Forms.TextBox
@@ -924,130 +861,118 @@ function Edit-App {
     }
 }
 
-# Function to grab an app icon
+function Show-AssignmentSelectionDialog {
+    # Returns a hashtable: 
+    # @{ AllDevices = $true/$false; AllDevicesRequired = $true/$false; AllUsers = $true/$false; AllUsersRequired = $true/$false; NoAssignment = $true/$false }
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Assignment Selection"
+    $form.Size = New-Object System.Drawing.Size(420,270)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = 'FixedDialog'
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
 
-function Grab-AppIcon {
-    param (
-        [string]$WingetId,
-        [string]$DisplayName
-    )
+    $font = New-Object System.Drawing.Font("Segoe UI", 11)
 
-    try {
-        # Input validation and directory check
-        if ([string]::IsNullOrWhiteSpace($WingetId)) {
-            throw "WingetId cannot be empty"
-        }
-        if ([string]::IsNullOrWhiteSpace($DisplayName)) {
-            throw "DisplayName cannot be empty"
-        }
+    # All Devices
+    $allDevicesCheck = New-Object System.Windows.Forms.CheckBox
+    $allDevicesCheck.Text = "Assign All Devices"
+    $allDevicesCheck.Location = New-Object System.Drawing.Point(30,30)
+    $allDevicesCheck.Size = New-Object System.Drawing.Size(180,30)
+    $allDevicesCheck.Font = $font
+    $form.Controls.Add($allDevicesCheck)
 
-        # Ensure the Icons directory exists
-        $iconsDir = Join-Path -Path $scriptDirectory -ChildPath "Icons"
-        if (-not (Test-Path $iconsDir)) {
-            New-Item -ItemType Directory -Path $iconsDir | Out-Null
-        }
+    $allDevicesRequiredCheck = New-Object System.Windows.Forms.CheckBox
+    $allDevicesRequiredCheck.Text = "Required"
+    $allDevicesRequiredCheck.Checked = $true
+    $allDevicesRequiredCheck.Location = New-Object System.Drawing.Point(230,30)
+    $allDevicesRequiredCheck.Size = New-Object System.Drawing.Size(120,30)
+    $allDevicesRequiredCheck.Font = $font
+    $allDevicesRequiredCheck.Enabled = $false
+    $form.Controls.Add($allDevicesRequiredCheck)
 
-        # Check if icon already exists
-        $existingIcon = Join-Path -Path $iconsDir -ChildPath "$WingetId.png"
-        if (Test-Path $existingIcon) {
-            Log-Message "Icon already exists for $DisplayName at: $existingIcon"
-            return
+    # All Users
+    $allUsersCheck = New-Object System.Windows.Forms.CheckBox
+    $allUsersCheck.Text = "Assign All Users"
+    $allUsersCheck.Location = New-Object System.Drawing.Point(30,70)
+    $allUsersCheck.Size = New-Object System.Drawing.Size(180,30)
+    $allUsersCheck.Font = $font
+    $form.Controls.Add($allUsersCheck)
+
+    $allUsersRequiredCheck = New-Object System.Windows.Forms.CheckBox
+    $allUsersRequiredCheck.Text = "Required"
+    $allUsersRequiredCheck.Checked = $true
+    $allUsersRequiredCheck.Location = New-Object System.Drawing.Point(230,70)
+    $allUsersRequiredCheck.Size = New-Object System.Drawing.Size(120,30)
+    $allUsersRequiredCheck.Font = $font
+    $allUsersRequiredCheck.Enabled = $false
+    $form.Controls.Add($allUsersRequiredCheck)
+
+    # No Assignment
+    $noAssignmentCheck = New-Object System.Windows.Forms.CheckBox
+    $noAssignmentCheck.Text = "No Assignment"
+    $noAssignmentCheck.Location = New-Object System.Drawing.Point(30,120)
+    $noAssignmentCheck.Size = New-Object System.Drawing.Size(250,30)
+    $noAssignmentCheck.Font = $font
+    $form.Controls.Add($noAssignmentCheck)
+
+    $okButton = New-Object System.Windows.Forms.Button
+    $okButton.Text = "OK"
+    $okButton.Location = New-Object System.Drawing.Point(150,180)
+    $okButton.Size = New-Object System.Drawing.Size(100,32)
+    $form.Controls.Add($okButton)
+
+    # Enable/disable required checkboxes based on assignment selection
+    $allDevicesCheck.Add_CheckedChanged({
+        $allDevicesRequiredCheck.Enabled = $allDevicesCheck.Checked
+        if ($allDevicesCheck.Checked -or $allUsersCheck.Checked) {
+            $noAssignmentCheck.Checked = $false
+            $noAssignmentCheck.Enabled = $false
         } else {
-            Log-Message "No existing icon found for $DisplayName. Will attempt to acquire one..."
+            $noAssignmentCheck.Enabled = $true
         }
-
-        # Split display name into words for searching
-        $searchTerms = $DisplayName.Split(' ') | Where-Object { $_.Length -gt 2 }
-        $firstWord = $searchTerms[0]
-        Log-Message "Searching installed applications for: $firstWord"
-
-        # Check installed applications using WMI
-        $installedApps = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*$firstWord*" }
-        if ($installedApps) {
-            foreach ($app in $installedApps) {
-                Log-Message "Found installed application: $($app.Name) at $($app.InstallLocation)"
-                # Attempt to extract icon from the application's installation path
-                $installLocation = $app.InstallLocation
-                if ($installLocation -and (Test-Path $installLocation)) {
-                    $exeFiles = Get-ChildItem -Path $installLocation -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
-                    foreach ($exe in $exeFiles) {
-                        try {
-                            Log-Message "Attempting to extract icon from: $($exe.FullName)"
-                            
-                            Add-Type -AssemblyName System.Drawing
-                            $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.FullName)
-                            $bitmap = $icon.ToBitmap()
-
-                            $iconPath = Join-Path -Path $iconsDir -ChildPath "$WingetId.png"
-                            $bitmap.Save($iconPath, [System.Drawing.Imaging.ImageFormat]::Png)
-                            Log-Message "Icon saved to $iconPath"
-                            return $true
-                        }
-                        catch {
-                            Log-Message "Failed to extract icon from $($exe.FullName): $($_.Exception.Message)" "WARNING"
-                            continue
-                        }
-                    }
-                } else {
-                    Log-Message "Installation location not found or not accessible for $($app.Name)"
-                }
-            }
+    })
+    $allUsersCheck.Add_CheckedChanged({
+        $allUsersRequiredCheck.Enabled = $allUsersCheck.Checked
+        if ($allDevicesCheck.Checked -or $allUsersCheck.Checked) {
+            $noAssignmentCheck.Checked = $false
+            $noAssignmentCheck.Enabled = $false
         } else {
-            Log-Message "No installed applications found matching '$firstWord' in Control Panel"
+            $noAssignmentCheck.Enabled = $true
         }
-
-        if (-not $found) {
-            throw "Could not find or extract any valid icons for $DisplayName"
+    })
+    $noAssignmentCheck.Add_CheckedChanged({
+        if ($noAssignmentCheck.Checked) {
+            $allDevicesCheck.Checked = $false
+            $allUsersCheck.Checked = $false
         }
-    }
-    catch {
-        $errorMessage = $_.Exception.Message
-        Log-Message "Failed to grab icon for $DisplayName - $errorMessage" "ERROR"
-        [System.Windows.Forms.MessageBox]::Show(
-            "Failed to grab icon for $DisplayName`n$errorMessage",
-            "Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error)
-    }
-}
+    })
 
-# Helper function to extract icons from a folder
-function Get-IconFromFolder {
-    param (
-        $folder,
-        $WingetId,
-        $iconsDir
-    )
-
-    Log-Message "Searching recursively in $($folder.FullName)"
-    $exeFiles = Get-ChildItem -Path $folder.FullName -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-    
-    if ($exeFiles) {
-        $iconCount = 0
-        foreach ($exe in $exeFiles | Select-Object -First 5) {
-            try {
-                Log-Message "Attempting to extract icon from: $($exe.FullName)"
-                
-                Add-Type -AssemblyName System.Drawing
-                $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.FullName)
-                $bitmap = $icon.ToBitmap()
-
-                $suffix = if ($iconCount -eq 0) { "" } else { "_$iconCount" }
-                $iconPath = Join-Path -Path $iconsDir -ChildPath "$($WingetId)$suffix.png"
-                $bitmap.Save($iconPath, [System.Drawing.Imaging.ImageFormat]::Png)
-                Log-Message "Icon saved to $iconPath"
-                $iconCount++
-                
-                if ($iconCount -ge 2) { return $true }
-            }
-            catch {
-                Log-Message "Failed to extract icon from $($exe.FullName): $($_.Exception.Message)" "WARNING"
-                continue
-            }
-        }
-        return ($iconCount -gt 0)
+    $assignmentChoice = @{
+        AllDevices = $false
+        AllDevicesRequired = $true
+        AllUsers = $false
+        AllUsersRequired = $true
+        NoAssignment = $false
     }
-    return $false
+
+    $okButton.Add_Click({
+        $assignmentChoice.AllDevices = $allDevicesCheck.Checked
+        $assignmentChoice.AllDevicesRequired = $allDevicesRequiredCheck.Checked
+        $assignmentChoice.AllUsers = $allUsersCheck.Checked
+        $assignmentChoice.AllUsersRequired = $allUsersRequiredCheck.Checked
+        $assignmentChoice.NoAssignment = $noAssignmentCheck.Checked
+        $form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $form.Close()
+    })
+
+    $form.AcceptButton = $okButton
+    $result = $form.ShowDialog()
+
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        return $null
+    }
+    return $assignmentChoice
 }
 
 # Define cleanup function
@@ -1232,147 +1157,6 @@ function Register-IntuneApp {
     }
 }
 
-function Create-UpdateRemediationScript {
-    param (
-        [string]$AppName,
-        [string]$WingetId,
-        [string]$ClientId,
-        [string]$ClientSecret,
-        [string]$TenantId,
-        [bool]$AssignToAllDevices
-    )
-
-    try {
-        Log-Message "Creating update remediation script for $AppName..."
-
-        # Authentication
-        $body = @{
-            grant_type    = "client_credentials"
-            client_id     = $ClientId
-            client_secret = $ClientSecret
-            scope         = "https://graph.microsoft.com/.default"
-        }
-     
-        $response = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Body $body
-        $accessToken = $response.access_token
-
-        # Connect to Graph with the access token
-        $version = (Get-Module Microsoft.Graph.Authentication | Select-Object -ExpandProperty Version).Major
-        if ($version -eq 2) {
-            $accessTokenFinal = ConvertTo-SecureString -String $accessToken -AsPlainText -Force
-        } else {
-            Select-MgProfile -Name Beta
-            $accessTokenFinal = $accessToken
-        }
-        Connect-MgGraph -AccessToken $accessTokenFinal | Out-Null
-
-        # Create detection script content
-        $detect = @"
-`$PackageName = "$WingetId"
-
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-if (`$ResolveWingetPath) {
-    `$WingetPath = `$ResolveWingetPath[-1].Path
-    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
-
-    # Escape special characters in the package name
-    `$escapedPackageName = [Regex]::Escape(`$PackageName)
-    
-    if (Test-Path `$wingetExe) {
-        Set-Location -Path `$WingetPath
-        `$updates = & `$wingetExe list --upgrade-available | Select-String -Pattern `$escapedPackageName
-
-        # Check if the PackageName is present in the list
-        if (`$updates) {
-            Write-Output "Update available"
-            Exit 1
-        } else {
-            Write-Output "No update available"
-            Exit 0
-        }    
-    }
-}
-"@
-
-        # Create remediation script content
-        $remediate = @"
-`$PackageName = "$WingetId"
-
-`$ResolveWingetPath = Resolve-Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe"
-if (`$ResolveWingetPath) {
-    `$WingetPath = `$ResolveWingetPath[-1].Path
-    `$wingetExe = Join-Path -Path `$WingetPath -ChildPath "winget.exe"
-
-    # Capture the output of the winget upgrade command
-    `$output = & `$wingetExe upgrade --id `$PackageName --silent --accept-source-agreements --accept-package-agreements
-
-    # Check if the output contains "Successfully installed"
-    if (`$output -match "Successfully installed") {
-        Write-Output "Update installed successfully."
-        Exit 0
-    } else {
-        Write-Output "Failed to install the update."
-        Exit 1
-    }
-}
-"@
-
-        # Parameters for the proactive remediation
-        $params = @{
-            "@odata.type" = "#microsoft.graph.deviceHealthScript"
-            displayName = "Update_$AppName"
-            description = "Checks and installs updates for $AppName using Winget"
-            publisher = "Winget Auto-Update"
-            runAs32Bit = $false
-            runAsAccount = "system"
-            enforceSignatureCheck = $false
-            detectionScriptContent = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($detect))
-            remediationScriptContent = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($remediate))
-            roleScopeTagIds = @("0")
-        }
-
-        # Create the proactive remediation using Graph API
-        $graphApiVersion = "beta"
-        $Resource = "deviceManagement/deviceHealthScripts"
-        $uri = "https://graph.microsoft.com/$graphApiVersion/$Resource"
-
-        # Create the remediation script
-        $proactive = Invoke-MGGraphRequest -Uri $uri -Method Post -Body ($params | ConvertTo-Json -Depth 10) -ContentType "application/json"
-        Log-Message "Created proactive remediation script for $AppName"
-
-        if ($AssignToAllDevices) {
-            $scheduleParams = @{
-                deviceHealthScriptAssignments = @(
-                    @{
-                        target = @{
-                            "@odata.type" = "#microsoft.graph.allDevicesAssignmentTarget"
-                        }
-                        runRemediationScript = $true
-                        runSchedule = @{
-                            "@odata.type" = "#microsoft.graph.deviceHealthScriptDailySchedule"
-                            interval = 1
-                            time = "13:00"
-                            useUtc = $false
-                        }
-                    }
-                )
-            }
-
-            # Assign the script
-            $remediationId = $proactive.id
-            $assignUri = "https://graph.microsoft.com/$graphApiVersion/$Resource/$remediationId/assign"
-            
-            $assignment = Invoke-MGGraphRequest -Uri $assignUri -Method Post -Body ($scheduleParams | ConvertTo-Json -Depth 10) -ContentType "application/json"
-            Log-Message "Assigned update remediation script for $AppName to all devices"
-        }
-
-        return $proactive.id
-    }
-    catch {
-        Log-Message "Failed to create update remediation script: $($_.Exception.Message)" "ERROR"
-        throw
-    }
-}
 
 function Remove-AzureADApp {
     try {
@@ -1453,14 +1237,13 @@ function Run-MainScript {
             Log-Message "No existing configuration found at: $configPath"
         }
 
-        # Get assignment preference
-        $assignmentChoice = [System.Windows.Forms.MessageBox]::Show(
-            "Would you like to assign this app to all devices?`n`nYes = Assign to all devices`nNo = Do not assign to any group",
-            "Assignment Selection",
-            [System.Windows.Forms.MessageBoxButtons]::YesNo,
-            [System.Windows.Forms.MessageBoxIcon]::Question)
-
-        Log-Message "User selected assignment choice: $assignmentChoice"
+        # Show the new assignment selection dialog
+        $assignmentChoice = Show-AssignmentSelectionDialog
+        if (-not $assignmentChoice) {
+            Log-Message "Assignment selection cancelled by user."
+            return
+        }
+        Log-Message "User selected assignment: AllDevices=$($assignmentChoice.AllDevices), AllUsers=$($assignmentChoice.AllUsers), NoAssignment=$($assignmentChoice.NoAssignment)"
 
         # Validate credentials
         if ([string]::IsNullOrWhiteSpace($script:config.Credentials.TenantID) -or 
@@ -2050,6 +1833,17 @@ catch {
                         ErrorAction = "Stop"
                     }
 
+                    # Check if icon file exists, if not, download it
+                        if (-not (Test-Path $iconPath)) {
+                            $iconUrl = "https://api.winstall.app/icons/$($app.WingetId).png"
+                            try {
+                                Invoke-WebRequest -Uri $iconUrl -OutFile $iconPath -ErrorAction Stop
+                                Log-Message "Downloaded icon from $iconUrl"
+                            } catch {
+                                Log-Message "Could not download icon from $iconUrl"
+                        }
+                    }
+
                     # Add icon if it exists
                     if (Test-Path $iconPath) {
                         Log-Message "Found icon file for $($app.DisplayName) at: $iconPath"
@@ -2078,24 +1872,20 @@ catch {
                     Log-Message "Publisher: $($intuneApp.publisher)"
 
                     # Add assignment only if user selected Yes
-                    if ($assignmentChoice -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    if ($assignmentChoice.AllDevices) {
                         Log-Message "Adding 'All Devices' assignment to $($app.DisplayName)"
-                        Add-IntuneWin32AppAssignmentAllDevices -ID $intuneApp.id -Intent "required" -Notification "showAll" -Verbose
+                        Add-IntuneWin32AppAssignmentAllDevices -ID $intuneApp.id -Intent ($assignmentChoice.AllDevicesRequired ? "required" : "available") -Notification "showAll" -Verbose
                         Log-Message "Successfully added 'All Devices' assignment to $($app.DisplayName)"
-                    } else {
-                        Log-Message "Skipping group assignment for $($app.DisplayName) as per user choice"
                     }
-
-                    # Create update remediation script
-                    Log-Message "Creating update remediation script..."
-                    Create-UpdateRemediationScript `
-                        -AppName $intuneApp.displayName `
-                        -WingetId $app.WingetId `
-                        -ClientId $script:config.Credentials.ClientID `
-                        -ClientSecret $script:config.Credentials.ClientSecret `
-                        -TenantId $script:config.Credentials.TenantID `
-                        -AssignToAllDevices ($assignmentChoice -eq [System.Windows.Forms.DialogResult]::Yes)
-                    Log-Message "Update remediation script created"
+                    if ($assignmentChoice.AllUsers) {
+                        Log-Message "Adding 'All Users' assignment to $($app.DisplayName)"
+                        Add-IntuneWin32AppAssignmentAllUsers -ID $intuneApp.id -Intent ($assignmentChoice.AllUsersRequired ? "required" : "available") -Notification "showAll" -Verbose
+                        Log-Message "Successfully added 'All Users' assignment to $($app.DisplayName)"
+                    }
+                    if ($assignmentChoice.NoAssignment) {
+                        Log-Message "No assignment selected for $($app.DisplayName)"
+                        # No assignment logic needed
+                    } 
 
                 } catch {
                     Log-Message "Error processing $($app.DisplayName)" "ERROR" $_
@@ -2365,28 +2155,6 @@ $editButton.Add_Click({ Edit-App })
 $removeButton.Add_Click({ Remove-App })
 $runButton.Add_Click({ Run-MainScript })
 $searchButton.Add_Click({ Search-WingetApps })
-$grabIconButton.Add_Click({
-    if ($listView.SelectedItems.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Please select one or more apps to grab icons.",
-            "No Selection",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Warning)
-        return
-    }
-
-    foreach ($selectedItem in $listView.SelectedItems) {
-        # Get the app details from the config using the display name
-        $selectedApp = $script:config.Apps | Where-Object { $_.DisplayName -eq $selectedItem.Text }
-        
-        if ($selectedApp) {
-            Grab-AppIcon -WingetId $selectedApp.WingetId -DisplayName $selectedApp.DisplayName
-        }
-        else {
-            Log-Message "Could not find app configuration for $($selectedItem.Text)" "ERROR"
-        }
-    }
-})
 
 # Modify the form load event to initialize modules
 $form.Add_Shown({
