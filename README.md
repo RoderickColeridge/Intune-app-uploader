@@ -1,4 +1,4 @@
-# Intune App Uploader
+# Winget2Intune
 
 A PowerShell GUI tool for automating Winget app deployments through Microsoft Intune. Note that Windows Defender could block the script on first run. Unblock the script in Windows Defender to solve this problem.
 
