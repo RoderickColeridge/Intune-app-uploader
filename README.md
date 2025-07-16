@@ -1,4 +1,4 @@
-# Intune App Uploader
+# Winget2Intune
 
 A PowerShell GUI tool for automating Winget app deployments through Microsoft Intune. Note that Windows Defender could block the script on first run. Unblock the script in Windows Defender to solve this problem.
 
@@ -10,14 +10,14 @@ This script provides a graphical interface to:
     <li>Search and select Winget packages</li>
     <li>Package and upload applications to Intune</li>
     <li>Automatically create detection and installation scripts</li>
-    <li>Deploy applications to all devices</li>
+    <li>Deploy applications to all devices, all users and set required or available</li>
 </ul>
 
 ## Prerequisites
 
 <ul>
     <li>Windows 10/11</li>
-    <li>PowerShell 5.1 or higher</li>
+    <li>PowerShell 7</li>
     <li>Admin rights on the local machine</li>
     <li>Intune admin access</li>
     <li>Internet connectivity</li>
@@ -78,7 +78,7 @@ You can add applications in two ways:
     </li>
     <li>Click "Run" to start deployment.
         <ul>
-            <li>Choose if you want to assign the "All Devices" group as required.</li>
+            <li>Choose if you want to assign the "All Devices" or "All Users" group as required or available.</li>
         </ul>
     </li>
     <li>The script will:
@@ -88,8 +88,7 @@ You can add applications in two ways:
             <li>Create detection scripts</li>
             <li>Package everything using IntuneWinAppUtil</li>
             <li>Upload to Intune</li>
-            <li>Create device assignments</li>
-            <li>Create Remediation for daily update check</li>
+            <li>Create device assignments</li> 
         </ul>
     </li>
 </ol>
@@ -101,8 +100,6 @@ You can add applications in two ways:
     <li><strong>Remove</strong>: Delete applications from the list.</li>
     <li><strong>Del Credentials</strong>: Remove stored Azure AD credentials.</li>
     <li><strong>Logging</strong>: Detailed logs stored in the Logs directory.</li>
-    <li><strong>Grab Icon</strong>: Checks if the app is installed on the local PC and grabs the icon file and uploads it to Intune. If the app does not exist on the local machine, it will get installed and the .ico will be extracted. The app will be deleted straight after.</li>
-    <li><strong>Scripts</strong>: Deploy only the remediation script for updating the app using the Scripts button</li>
 </ul>
 
 ## Configuration
