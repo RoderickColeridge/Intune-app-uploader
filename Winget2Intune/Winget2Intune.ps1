@@ -182,7 +182,7 @@ $TempDir = "C:\IntunePackages"
 
 # Create the main form
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Intune App Uploader"
+$form.Text = "Winget2Intune"
 $form.Size = New-Object System.Drawing.Size(800,600)
 $form.StartPosition = "CenterScreen"
 
