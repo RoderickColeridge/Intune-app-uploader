@@ -99,6 +99,10 @@
 # Rename to Winget2Intune
 # Date: 16-07-2025
 #########################################
+# Version 2.0.3
+# Fix in the detection script.
+# Switch from -match to Select-String -SimpleMatch due to issues with -match in the detection script.
+# Date: 24-07-2025
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
@@ -115,7 +119,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Winget2Intune/re
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Winget2Intune/refs/heads/main/Winget2Intune/version.txt"
 
 # Current version of the script
-$currentVersion = "2.0.2"
+$currentVersion = "2.0.3"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -1790,7 +1794,7 @@ try {
     cd `$WingetPath
     `$listResult = .\winget.exe list --id `$PackageName --accept-source-agreements
 
-    if (`$listResult -match `$PackageName) {
+    if (`$listResult | Select-String -SimpleMatch `$PackageName) {
         Write-Output "`$PackageName detected"
         exit 0
     }
