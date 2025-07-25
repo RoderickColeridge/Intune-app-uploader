@@ -103,6 +103,12 @@
 # Fix in the detection script.
 # Switch from -match to Select-String -SimpleMatch due to issues with -match in the detection script.
 # Date: 24-07-2025
+#########################################
+# Version 2.0.4
+# Removed the need to add Publisher and Description manually.
+# Built in a winget version check when running the script to ensure most recent winget.
+# Date: 25-07-2025
+#########################################
 
 # Suppress provider prompts
 $env:POWERSHELL_UPDATECHECK = "Off"
@@ -119,7 +125,7 @@ $repoUrl = "https://raw.githubusercontent.com/RoderickColeridge/Winget2Intune/re
 $versionFileUrl = "https://raw.githubusercontent.com/RoderickColeridge/Winget2Intune/refs/heads/main/Winget2Intune/version.txt"
 
 # Current version of the script
-$currentVersion = "2.0.3"
+$currentVersion = "2.0.4"
 
 # Get the directory of the current script
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -323,11 +329,14 @@ function Load-Apps {
             }
             
             foreach ($app in $script:config.Apps) {
+                if ($null -eq $app) { continue }
+                if (-not $app.DisplayName -or -not $app.WingetId -or -not $app.Publisher) { continue }
                 $item = New-Object System.Windows.Forms.ListViewItem($app.DisplayName)
                 $item.SubItems.Add($app.WingetId)
                 $item.SubItems.Add($app.Publisher)
                 $listView.Items.Add($item)
             }
+
             Log-Message "Loaded apps from config file successfully."
         } catch {
             Log-Message "Error loading config file: $_" "ERROR"
@@ -506,6 +515,57 @@ function Remove-App {
     }
 }
 
+function Update-WingetSilently {
+    try {
+        Log-Message "Checking current winget version..."
+        $wingetVersion = ""
+        try { 
+            $wingetVersion = winget --version 2>$null
+            # Remove any leading 'v' or whitespace
+            $wingetVersion = $wingetVersion -replace '^[vV]', '' -replace '\s',''
+        } catch {}
+
+        # Get latest version from GitHub API
+        $latestWingetVersion = ""
+        try {
+            $releaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/winget-cli/releases/latest" -UseBasicParsing
+            $latestWingetVersion = $releaseInfo.tag_name -replace '^[vV]', '' -replace '\s',''
+            Log-Message "Latest winget version available: $latestWingetVersion"
+        } catch {
+            Log-Message "Could not retrieve latest winget version from GitHub. Skipping version check." "WARNING"
+            return
+        }
+
+        if ($wingetVersion -and $latestWingetVersion -and ([version]$wingetVersion -ge [version]$latestWingetVersion)) {
+            Log-Message "winget is up to date (version $wingetVersion)."
+            return
+        } else {
+            Log-Message "winget is outdated or not found (current: $wingetVersion, latest: $latestWingetVersion). Updating..."
+        }
+
+        # Download latest App Installer bundle
+        $installerUrl = "https://aka.ms/getwinget"
+        $localPath = "$env:TEMP\AppInstaller.msixbundle"
+        Invoke-WebRequest -Uri $installerUrl -OutFile $localPath -UseBasicParsing
+
+        # Install the bundle (works for current user, admin not required for user context)
+        Add-AppxPackage -Path $localPath -ForceApplicationShutdown
+
+        # Optionally, clean up installer
+        Remove-Item $localPath -Force -ErrorAction SilentlyContinue
+
+        # Re-check version after update
+        try {
+            $wingetVersion = winget --version 2>$null
+            $wingetVersion = $wingetVersion -replace '^[vV]', '' -replace '\s',''
+            Log-Message "winget updated to version $wingetVersion."
+        } catch {
+            Log-Message "winget not found after update attempt." "ERROR"
+        }
+    } catch {
+        Log-Message "Automatic winget update failed: $($_.Exception.Message)" "WARNING"
+    }
+}
 function Remove-StoredCredentials {
     try {
         Log-Message "Starting credential removal process..."
@@ -1582,7 +1642,6 @@ if (-not (Test-Path `$WinGet)) {
     Write-Log "Unable to find or install WinGet. Cannot proceed with installation."
     exit 1
 }
-
 try {
     Write-Log -message "Starting installation of `$PackageName"
     `$Install = WingetInstallPackage
@@ -2059,65 +2118,69 @@ function Search-WingetApps {
             $wingetId = $selectedApp.SubItems[1].Text
             $version = $selectedApp.SubItems[2].Text
 
-            $addForm = New-Object System.Windows.Forms.Form
-            $addForm.Text = "Add App Details"
-            $addForm.Size = New-Object System.Drawing.Size(300,250)
-            $addForm.StartPosition = "CenterScreen"
+# Run winget show and capture output
+$tempWingetFile = [System.IO.Path]::GetTempFileName()
+winget show $wingetId | Out-File -FilePath $tempWingetFile -Encoding utf8
+$wingetOutput = Get-Content -Path $tempWingetFile -Encoding utf8
+Remove-Item $tempWingetFile -Force
 
-            $publisherLabel = New-Object System.Windows.Forms.Label
-            $publisherLabel.Location = New-Object System.Drawing.Point(10,20)
-            $publisherLabel.Size = New-Object System.Drawing.Size(100,20)
-            $publisherLabel.Text = "Publisher:"
-            $addForm.Controls.Add($publisherLabel)
+# Extract Publisher
+$publisher = ($wingetOutput | Where-Object { $_ -match "^\s*Publisher\s*:\s*(.+)$" }) -replace "^\s*Publisher\s*:\s*", ""
 
-            $publisherTextBox = New-Object System.Windows.Forms.TextBox
-            $publisherTextBox.Location = New-Object System.Drawing.Point(120,20)
-            $publisherTextBox.Size = New-Object System.Drawing.Size(150,20)
-            $addForm.Controls.Add($publisherTextBox)
+# Extract Description (single-line or multi-line)
+$description = ""
+$descriptionStarted = $false
+$descriptionLines = @()
+foreach ($line in $wingetOutput) {
+    # Handle single-line description
+    if ($line -match "^\s*Description\s*:\s*(.+)$") {
+        $description = $Matches[1].Trim()
+        break
+    }
+    # Handle multi-line description
+    if ($line -match "^\s*Description\s*:\s*$") {
+        $descriptionStarted = $true
+        continue
+    }
+    if ($descriptionStarted) {
+        if ($line -match "^\S") { break }
+        $descriptionLines += $line.Trim()
+    }
+}
+if (-not $description) {
+    $description = $descriptionLines -join " "
+}
 
-            $descriptionLabel = New-Object System.Windows.Forms.Label
-            $descriptionLabel.Location = New-Object System.Drawing.Point(10,50)
-            $descriptionLabel.Size = New-Object System.Drawing.Size(100,20)
-            $descriptionLabel.Text = "Description:"
-            $addForm.Controls.Add($descriptionLabel)
+# Fix encoding issues
+$description = $description -replace 'ÔÇ£', '"'
+$description = $description -replace 'ÔÇØ', '"'
+$description = $description -replace 'ÔÇÖ', "'"
+$description = $description -replace 'ÔÇô', '-'
+$description = $description -replace 'â€“', '-'
+$description = $description -replace 'â€”', '--'
+$description = $description -replace 'â€˜', "'"
+$description = $description -replace 'â€™', "'"
+$description = $description -replace 'â€œ', '"'
+$description = $description -replace 'â€�', '"'
 
-            $descriptionTextBox = New-Object System.Windows.Forms.TextBox
-            $descriptionTextBox.Location = New-Object System.Drawing.Point(120,50)
-            $descriptionTextBox.Size = New-Object System.Drawing.Size(150,60)
-            $descriptionTextBox.Multiline = $true
-            $addForm.Controls.Add($descriptionTextBox)
+            $safeFileName = $displayName -replace '\s', '_'
+            $installCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\$safeFileName.ps1 -mode install -log `"$wingetId.log`""
+            $uninstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\${safeFileName}_uninstall.ps1"
 
-            $okButton = New-Object System.Windows.Forms.Button
-            $okButton.Location = New-Object System.Drawing.Point(120,120)
-            $okButton.Size = New-Object System.Drawing.Size(75,23)
-            $okButton.Text = "OK"
-            $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
-            $addForm.Controls.Add($okButton)
-
-            $addForm.AcceptButton = $okButton
-
-            $result = $addForm.ShowDialog()
-
-            if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-                $safeFileName = $displayName -replace '\s', '_'
-                $installCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\$safeFileName.ps1 -mode install -log `"$wingetId.log`""
-                $uninstallCommand = "%windir%\sysnative\WindowsPowerShell\v1.0\powershell.exe -Executionpolicy Bypass -file .\${safeFileName}_uninstall.ps1"
-
-                $newApp = @{
-                    DisplayName = $displayName
-                    WingetId = $wingetId
-                    Publisher = $publisherTextBox.Text
-                    Description = $descriptionTextBox.Text
-                    InstallCommand = $installCommand
-                    UninstallCommand = $uninstallCommand
-                }
-
-                $script:config.Apps += $newApp
-                Save-Config
-                Load-Apps
-                Log-Message "Added new app from Winget: $displayName"
-                $searchForm.Close()
+            $newApp = @{
+                DisplayName = $displayName
+                WingetId = $wingetId
+                Publisher = $publisher
+                Description = $description
+                InstallCommand = $installCommand
+                UninstallCommand = $uninstallCommand
             }
+
+            $script:config.Apps += $newApp
+            Save-Config
+            Load-Apps
+            Log-Message "Added new app from Winget: $displayName"
+            $searchForm.Close()
         }
     })
 
@@ -2164,6 +2227,7 @@ $searchButton.Add_Click({ Search-WingetApps })
 # Modify the form load event to initialize modules
 $form.Add_Shown({
     if (Initialize-RequiredModules) {
+        Update-WingetSilently
         Load-Apps  # This will just load any existing apps from config without connecting
     }
 })
